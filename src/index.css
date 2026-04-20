@@ -82,3 +82,62 @@ body {
 * {
   border-color: var(--color-outline-variant);
 }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 20mm;
+  }
+
+  .no-print, nav, header:not(.document-header), .sidebar {
+    display: none !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tbody {
+    display: table-row-group !important;
+  }
+  
+  /* Break structural constraints for full visibility */
+  html, body, #root, .flex, .flex-1, .h-screen, .min-h-screen {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    overflow-y: visible !important;
+    display: block !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: fixed !important;
+  }
+
+  /* Standardized inputs for print */
+  input, textarea {
+    border-bottom: 1px solid black !important;
+    background: transparent !important;
+    padding: 0 4px !important;
+    font-weight: bold !important;
+    color: black !important;
+  }
+
+  header, footer {
+    border-color: #000 !important;
+  }
+
+  /* Legal Justification */
+  .prose-legal {
+    text-align: justify !important;
+    text-justify: inter-word !important;
+    line-height: 2 !important;
+  }
+}
