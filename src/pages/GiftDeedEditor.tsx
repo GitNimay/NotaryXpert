@@ -102,6 +102,7 @@ export function GiftDeedEditor() {
   const [persons, setPersons] = useState<Person[]>([
     { id: `person-${Date.now()}`, name: '', age: '', addr: '', aadhar: '', phone: '', email: '', photo: undefined, thumb: undefined }
   ]);
+  const [basePdfFile, setBasePdfFile] = useState<File | null>(null);
 
   const [activeCapture, setActiveCapture] = useState<{ personId: string, type: 'photo' | 'thumb' } | null>(null);
 
@@ -393,14 +394,11 @@ export function GiftDeedEditor() {
     }
   };
 
-  const handleAutoGenerateAndUploadPdf = async () => {
-    setIsUploadingPdf(true);
-    try {
+  const generateMergedPdfBlob = async (): Promise<Blob> => {
       const element = document.getElementById('document-to-print');
       if (!element) throw new Error("Document preview block not found.");
-
       const html2pdf = (window as any).html2pdf;
-      if (!html2pdf) throw new Error("PDF Library is still loading, please refresh page and try again.");
+      if (!html2pdf) throw new Error("PDF Library missing, please wait or refresh.");
 
       const opt = {
         margin:       0,
@@ -421,13 +419,39 @@ export function GiftDeedEditor() {
         jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
       };
 
-      // Generate the PDF as a secure Blob
-      const pdfBlob = await html2pdf().set(opt).from(element).output('blob');
-      const file = new File([pdfBlob], opt.filename, { type: 'application/pdf' });
+      const notaryPdfArrayBuffer = await html2pdf().set(opt).from(element).output('arraybuffer');
+
+      if (basePdfFile) {
+         try {
+             const PDFLib = (window as any).PDFLib;
+             if (!PDFLib) throw new Error("PDF Library missing.");
+             const basePdfBytes = await basePdfFile.arrayBuffer();
+             const docA = await PDFLib.PDFDocument.load(basePdfBytes);
+             const docB = await PDFLib.PDFDocument.load(notaryPdfArrayBuffer);
+             const mergedDoc = await PDFLib.PDFDocument.create();
+             const copiedPagesA = await mergedDoc.copyPages(docA, docA.getPageIndices());
+             copiedPagesA.forEach((page: any) => mergedDoc.addPage(page));
+             const copiedPagesB = await mergedDoc.copyPages(docB, docB.getPageIndices());
+             copiedPagesB.forEach((page: any) => mergedDoc.addPage(page));
+             const mergedPdfBytes = await mergedDoc.save();
+             return new Blob([mergedPdfBytes], { type: 'application/pdf' });
+         } catch (e) {
+             console.error("PDF Merge Failed:", e);
+             alert("Failed to merge the Original PDF. Processing the standalone Notary Page instead.");
+         }
+      }
+      return new Blob([notaryPdfArrayBuffer], { type: 'application/pdf' });
+  };
+
+  const handleAutoGenerateAndUploadPdf = async () => {
+    setIsUploadingPdf(true);
+    try {
+      const mergedBlob = await generateMergedPdfBlob();
+      const finalFile = new File([mergedBlob], `Merged_Document_${srNo || '01'}.pdf`, { type: 'application/pdf' });
 
       const cloudName = "dsyow3tjq";
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", finalFile);
       formData.append("upload_preset", "notery");
 
       // Auto route pushes PDFs to the global /auto handler so Cloudinary sorts the asset
@@ -462,9 +486,25 @@ export function GiftDeedEditor() {
     }
   };
 
-  const handlePrint = () => {
-    // Print the current document preview directly since it's perfectly matched to the HTML layout
-    window.print();
+  const handlePrint = async () => {
+    if (basePdfFile) {
+       // We have an uploaded base PDF, so we must structurally merge before handing it to the OS printer!
+       try {
+           setIsUploadingPdf(true); // Re-use the existing loading UI spinner on the button
+           const mergedBlob = await generateMergedPdfBlob();
+           const blobUrl = URL.createObjectURL(mergedBlob);
+           window.open(blobUrl, '_blank'); // Opens the natively merged PDF perfectly in the browser's PDF viewer for flawless printing
+       } catch (e) {
+           console.error("Print Merge Error:", e);
+           alert("Failed to merge original document for printing. Dropping back to standalone Notary layout print.");
+           window.print();
+       } finally {
+           setIsUploadingPdf(false);
+       }
+    } else {
+       // Just standard flawless HTML single-page print handling
+       window.print();
+    }
   };
 
 
@@ -511,17 +551,43 @@ export function GiftDeedEditor() {
              </div>
           </div>
 
-          <div className="relative w-full mb-8">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant focus-within:text-primary transition-colors" />
-            <input 
-              className="w-full bg-surface-container-highest focus:bg-surface-container-lowest text-on-surface placeholder:text-on-surface-variant/70 rounded-lg py-3 pl-12 pr-12 border border-outline-variant/15 focus:ring-2 focus:ring-primary/30 transition-all font-body text-sm" 
-              placeholder="Enter Document ID to auto-fetch from cloud..." 
-              value={fetchQuery}
-              onChange={(e) => handleAutoFetch(e.target.value)}
-              type="text"
-            />
-            {isFetching && <Loader2 size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-primary animate-spin" />}
-          </div>
+            <div className="relative w-full">
+              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant focus-within:text-primary transition-colors" />
+              <input 
+                className="w-full bg-surface-container-highest focus:bg-surface-container-lowest text-on-surface placeholder:text-on-surface-variant/70 rounded-lg py-3 pl-12 pr-12 border border-outline-variant/15 focus:ring-2 focus:ring-primary/30 transition-all font-body text-sm" 
+                placeholder="Enter Document ID to auto-fetch from cloud..." 
+                value={fetchQuery}
+                onChange={(e) => handleAutoFetch(e.target.value)}
+                type="text"
+              />
+              {isFetching && <Loader2 size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-primary animate-spin" />}
+            </div>
+            <div className="mt-4 p-4 border border-dashed border-outline-variant/40 rounded-xl bg-surface-container-lowest/50 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex flex-col">
+                <span className="text-sm font-bold text-on-surface">Original Document (Optional)</span>
+                <span className="text-xs text-on-surface-variant font-body">Upload the original Gift Deed PDF. The Notary page will be appended to the END.</span>
+              </div>
+              <label className="flex items-center gap-2 bg-secondary-container text-on-secondary-container px-4 py-2 rounded-lg font-body font-medium hover:opacity-90 active:scale-95 transition-all text-sm shadow-sm cursor-pointer whitespace-nowrap">
+                <FileText size={16} /> 
+                {basePdfFile ? 'Change Original PDF' : 'Attach Main PDF'}
+                <input 
+                   type="file" 
+                   accept="application/pdf" 
+                   className="hidden" 
+                   onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                         setBasePdfFile(e.target.files[0]);
+                      }
+                   }} 
+                />
+              </label>
+              {basePdfFile && (
+                <div className="flex items-center gap-2 bg-green-100 text-green-800 px-3 py-1.5 rounded-lg text-xs font-bold">
+                  Attached: {basePdfFile.name}
+                  <button onClick={() => setBasePdfFile(null)} className="ml-2 hover:text-red-600"><X size={14} /></button>
+                </div>
+              )}
+            </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div>
@@ -651,8 +717,10 @@ export function GiftDeedEditor() {
         <article id="document-to-print" className="bg-[#ffffff] w-[210mm] min-h-[297mm] overflow-visible shadow-[0_4px_12px_rgba(0,0,0,0.2)] relative flex flex-col p-[15mm] my-[20px] box-border print:shadow-none print:w-[210mm] print:max-w-none print:p-[15mm] print:m-0" style={{ fontFamily: '"Times New Roman", serif' }}>
           
           <div className="text-center">
-            <h2 className="font-bold text-2xl m-0">Shri S. V. Tarte Advocate & Notary</h2>
-            <small>Head Office: Plot No.121, Tarte Plaza, Dombivli (E)</small>
+            <h2 className="font-bold text-2xl m-0">Adv. Sameer Shrikant Vispute</h2>
+            <small>Bombay High Court Notary (Govt. of India) Reg. No. 57704 </small>
+            <br />
+            <small>Shree Bhagwati Krupa, Pendse Nagar, Lane No 2, Dombivli (E), Dist. Thane - 421201.</small>
           </div>
 
           <div className="text-center mt-3 mb-2 flex justify-center">
