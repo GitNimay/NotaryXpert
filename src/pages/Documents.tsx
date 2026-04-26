@@ -11,6 +11,7 @@ export function Documents() {
   const [isLoading, setIsLoading] = useState(true);
   
   const [searchQuery, setSearchQuery] = useState("");
+  const [regNumberFilter, setRegNumberFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [dateSort, setDateSort] = useState("newest");
   const [startDate, setStartDate] = useState("");
@@ -44,7 +45,9 @@ export function Documents() {
             statusBg: data.pdfUrl ? "bg-surface-container-highest" : "bg-surface-container",
             statusText: data.pdfUrl ? "text-on-surface" : "text-on-surface-variant",
             pdfUrl: data.pdfUrl,
-            srNo: data.srNo
+            srNo: data.srNo,
+            kNo: data.kNo || "-",
+            pageNo: data.pageNo || "-"
           };
         });
         setDocuments(fetched);
@@ -58,6 +61,8 @@ export function Documents() {
     fetchDocs();
   }, []);
 
+  const uniqueRegNumbers = Array.from(new Set(documents.map(d => d.kNo).filter(k => k && k !== "-"))).sort();
+
   const filteredDocuments = documents.filter(doc => {
      // Search filter
      const safeSearch = String(searchQuery).toLowerCase();
@@ -65,7 +70,12 @@ export function Documents() {
          String(doc.id || "").toLowerCase().includes(safeSearch) || 
          String(doc.clientName || "").toLowerCase().includes(safeSearch) || 
          String(doc.srNo || "").toLowerCase().includes(safeSearch) ||
+         String(doc.kNo || "").toLowerCase().includes(safeSearch) ||
+         String(doc.pageNo || "").toLowerCase().includes(safeSearch) ||
          String(doc.type || "").toLowerCase().includes(safeSearch);
+     
+     // Reg Number specific filter
+     const matchesRegNumberFilter = regNumberFilter === "" || String(doc.kNo) === regNumberFilter;
      
      // Status filter
      const matchesStatus = statusFilter === "" || String(doc.status).toLowerCase() === statusFilter.toLowerCase();
@@ -87,8 +97,7 @@ export function Documents() {
            matchesDate = false; // If searching for dates but doc has no date, filter out.
         }
      }
-     
-     return matchesSearch && matchesStatus && matchesDate;
+     return matchesSearch && matchesRegNumberFilter && matchesStatus && matchesDate;
   }).sort((a, b) => {
      if (dateSort === "newest") return b.timestamp - a.timestamp;
      if (dateSort === "oldest") return a.timestamp - b.timestamp;
@@ -126,6 +135,15 @@ export function Documents() {
               />
             </div>
             <div className="flex flex-wrap md:flex-nowrap gap-3 items-center w-full lg:w-auto">
+              <div className="relative min-w-[120px] flex-grow lg:flex-grow-0">
+                <select value={regNumberFilter} onChange={(e) => setRegNumberFilter(e.target.value)} className="w-full appearance-none bg-surface-container-highest focus:bg-surface-container-lowest text-on-surface rounded-md py-3 pl-4 pr-10 border-none focus:ring-2 focus:ring-primary/30 transition-all font-body text-sm cursor-pointer">
+                  <option value="">Any Reg No</option>
+                  {uniqueRegNumbers.map(reg => (
+                     <option key={reg} value={reg}>Reg: {reg}</option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
+              </div>
               <div className="relative min-w-[140px] flex-grow lg:flex-grow-0">
                 <select value={dateSort} onChange={(e) => setDateSort(e.target.value)} className="w-full appearance-none bg-surface-container-highest focus:bg-surface-container-lowest text-on-surface rounded-md py-3 pl-4 pr-10 border-none focus:ring-2 focus:ring-primary/30 transition-all font-body text-sm cursor-pointer">
                   <option value="newest">Newest First</option>
@@ -198,7 +216,8 @@ export function Documents() {
                     
                     <div className="col-span-1 md:col-span-3 flex flex-col md:block">
                       <span className="md:hidden text-xs text-on-surface-variant font-label uppercase tracking-wider mb-1">Subject</span>
-                      <span className="font-body text-sm text-on-surface">{doc.srNo ? `Sr No: ${doc.srNo}` : doc.type}</span>
+                      <span className="font-body text-sm text-on-surface block">{doc.srNo ? `Sr No: ${doc.srNo}` : doc.type}</span>
+                      <span className="font-body text-xs text-on-surface-variant block mt-0.5">Reg: {doc.kNo} | Pg: {doc.pageNo}</span>
                     </div>
                     
                     <div className="col-span-1 md:col-span-2 flex flex-col md:block">

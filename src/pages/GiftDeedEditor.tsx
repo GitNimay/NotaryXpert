@@ -3,7 +3,7 @@ import { Layout } from "../components/layout/Layout";
 import { TopBar } from "../components/layout/TopBar";
 import { Camera, Fingerprint, Printer, X, RefreshCw, Plus, Gavel, Search, Loader2, Save, UploadCloud, FileText } from "lucide-react";
 import { db, storage } from "../firebase";
-import { collection, addDoc, getDoc, doc, updateDoc, setDoc, query, orderBy, limit, getDocs } from "firebase/firestore";
+import { collection, addDoc, getDoc, doc, updateDoc, setDoc, query, orderBy, limit, getDocs, where } from "firebase/firestore";
 import { ref, uploadString, getDownloadURL } from "firebase/storage";
 import { pdf } from '@react-pdf/renderer';
 import NotaryPdfTemplate from '../components/NotaryPdfTemplate';
@@ -222,38 +222,67 @@ export function GiftDeedEditor() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
 
-  // Auto-fetch the next logical SrNo strictly when the editor loads
+  // Auto-fetch the next logical Sequence strictly when the editor loads
   useEffect(() => {
-    const fetchNextSrNo = async () => {
+    const fetchNextSequence = async () => {
       try {
-        const q = query(collection(db, "documents"), orderBy("createdAt", "desc"), limit(1));
-        const qs = await getDocs(q);
-        if (!qs.empty) {
-          const lastDoc = qs.docs[0].data();
-          const lastSrNo = parseInt(lastDoc.srNo);
-          if (!isNaN(lastSrNo)) {
-            setSrNo((lastSrNo + 1).toString());
+        let srNoAssigned = false;
+        let kNoAssigned = false;
+        let pageNoAssigned = false;
+
+        // 1. Try to fetch from global settings first
+        const configSnap = await getDoc(doc(db, "settings", "config"));
+        if (configSnap.exists()) {
+           const config = configSnap.data();
+           if (config.currentSrNo) {
+              setSrNo(config.currentSrNo);
+              srNoAssigned = true;
+           }
+           if (config.registerNumber) {
+              setKNo(config.registerNumber);
+              kNoAssigned = true;
+           }
+           if (config.currentPageNo) {
+              setPageNo(config.currentPageNo);
+              pageNoAssigned = true;
+           }
+        }
+
+        // 2. Fallback to querying the latest document for any missing values
+        if (!srNoAssigned || !kNoAssigned || !pageNoAssigned) {
+          const q = query(collection(db, "documents"), orderBy("createdAt", "desc"), limit(1));
+          const qs = await getDocs(q);
+          if (!qs.empty) {
+            const lastDoc = qs.docs[0].data();
+            
+            if (!srNoAssigned) {
+              const lastSrNo = parseInt(lastDoc.srNo);
+              setSrNo(!isNaN(lastSrNo) ? (lastSrNo + 1).toString() : "1");
+            }
+            
+            if (!kNoAssigned && lastDoc.kNo) {
+               setKNo(lastDoc.kNo);
+            }
+            
+            if (!pageNoAssigned) {
+               if (lastDoc.kNo && kNoAssigned && lastDoc.kNo !== kNo) {
+                  // If the register number changed, we start at 1
+                  setPageNo("1");
+               } else {
+                  const lastPageNo = parseInt(lastDoc.pageNo);
+                  setPageNo(!isNaN(lastPageNo) ? (lastPageNo + 1).toString() : "1");
+               }
+            }
           } else {
-            setSrNo("1");
+            if (!srNoAssigned) setSrNo("1");
+            if (!pageNoAssigned) setPageNo("1");
           }
-        } else {
-          setSrNo("1");
         }
       } catch (err) {
-        console.error("Error calculating next Sr No:", err);
+        console.error("Error calculating next sequence:", err);
       }
     };
-    fetchNextSrNo();
-
-    const fetchGlobalSettings = async () => {
-      try {
-         const docSnap = await getDoc(doc(db, "settings", "config"));
-         if (docSnap.exists() && docSnap.data().registerNumber) {
-            setKNo(prev => prev === "" ? docSnap.data().registerNumber : prev);
-         }
-      } catch(e) { console.error("Error fetching register number:", e); }
-    };
-    fetchGlobalSettings();
+    fetchNextSequence();
   }, []);
 
   const [knownClients, setKnownClients] = useState<Person[]>([]);
@@ -354,6 +383,11 @@ export function GiftDeedEditor() {
     return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
   };
 
+  const handleKNoChange = (newKNo: string) => {
+    setKNo(newKNo);
+    setPageNo("1");
+  };
+
   const handleSaveToFirebase = async (overridePdfUrl?: string, silent: boolean = false) => {
     if (!silent) setIsSaving(true);
     try {
@@ -393,8 +427,16 @@ export function GiftDeedEditor() {
         }
       }
 
-      if (kNo) {
-        await setDoc(doc(db, "settings", "config"), { registerNumber: kNo }, { merge: true }).catch(console.error);
+      // Ensure unique combination of kNo and pageNo
+      if (kNo && pageNo) {
+         const q = query(collection(db, "documents"), where("kNo", "==", kNo));
+         const qs = await getDocs(q);
+         const isDuplicate = qs.docs.some(docSnap => docSnap.id !== fetchQuery.trim() && docSnap.data().pageNo === pageNo);
+         if (isDuplicate) {
+            alert("This Register No and Reg.Page No combination already exists! Please use a unique combination.");
+            setIsSaving(false);
+            return;
+         }
       }
 
       const docData = {
@@ -426,6 +468,17 @@ export function GiftDeedEditor() {
         ]);
         if (!silent) alert(`Document saved successfully to Firebase!\n\nDocument ID: ${docRef.id}`);
         setFetchQuery(docRef.id);
+        
+        // Update global counters in Settings only on new document creation
+        // We increment the counters so the NEXT document starts with the new values
+        const nextSrNo = (!isNaN(parseInt(srNo)) ? (parseInt(srNo) + 1).toString() : srNo);
+        const nextPageNo = (!isNaN(parseInt(pageNo)) ? (parseInt(pageNo) + 1).toString() : pageNo);
+        
+        await setDoc(doc(db, "settings", "config"), { 
+           currentSrNo: nextSrNo,
+           registerNumber: kNo,
+           currentPageNo: nextPageNo
+        }, { merge: true }).catch(e => console.error("Failed to update global counters", e));
       }
       console.log('Firebase Save transaction completed securely!');
     } catch (error) {
@@ -653,7 +706,7 @@ export function GiftDeedEditor() {
             </div>
             <div>
               <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Register No</label>
-              <input type="text" value={kNo} onChange={(e) => setKNo(e.target.value)} className="w-full p-3 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. 123" />
+              <input type="text" value={kNo} onChange={(e) => handleKNoChange(e.target.value)} className="w-full p-3 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. 123" />
             </div>
             <div>
               <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Reg.Page No</label>

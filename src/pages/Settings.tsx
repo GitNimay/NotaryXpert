@@ -8,6 +8,8 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 export function Settings() {
   const [licenseNumber, setLicenseNumber] = useState("NX-2023-8941");
   const [registerNumber, setRegisterNumber] = useState("");
+  const [currentSrNo, setCurrentSrNo] = useState("");
+  const [currentPageNo, setCurrentPageNo] = useState("");
 
   useEffect(() => {
     const savedLicense = localStorage.getItem("notaryLicenseNumber");
@@ -16,11 +18,14 @@ export function Settings() {
     const fetchSettings = async () => {
       try {
         const docSnap = await getDoc(doc(db, "settings", "config"));
-        if (docSnap.exists() && docSnap.data().registerNumber) {
-          setRegisterNumber(docSnap.data().registerNumber);
+        if (docSnap.exists()) {
+           const data = docSnap.data();
+           if (data.registerNumber) setRegisterNumber(data.registerNumber);
+           if (data.currentSrNo) setCurrentSrNo(data.currentSrNo);
+           if (data.currentPageNo) setCurrentPageNo(data.currentPageNo);
         } else {
-          const savedRegister = localStorage.getItem("registerNumber");
-          if (savedRegister) setRegisterNumber(savedRegister);
+           const savedRegister = localStorage.getItem("registerNumber");
+           if (savedRegister) setRegisterNumber(savedRegister);
         }
       } catch (err) {
         console.error("Failed to fetch settings from Firebase", err);
@@ -32,7 +37,11 @@ export function Settings() {
   const handleSave = async () => {
     localStorage.setItem("notaryLicenseNumber", licenseNumber);
     try {
-      await setDoc(doc(db, "settings", "config"), { registerNumber }, { merge: true });
+      await setDoc(doc(db, "settings", "config"), { 
+         registerNumber,
+         currentSrNo,
+         currentPageNo
+      }, { merge: true });
       localStorage.setItem("registerNumber", registerNumber);
       alert("Settings saved successfully to Firebase Cloud!");
     } catch (e) {
@@ -150,6 +159,30 @@ export function Settings() {
                         value={registerNumber}
                         onChange={(e) => setRegisterNumber(e.target.value)}
                         placeholder="e.g. 123"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="font-label text-sm font-medium text-on-surface-variant flex items-center gap-2">
+                        Current Doc Number (Sr No)
+                      </label>
+                      <input 
+                        className="w-full bg-surface-container-highest border-transparent focus:border-primary/30 focus:bg-surface-container-lowest focus:ring-0 rounded-md font-body text-on-surface font-mono px-4 py-3 transition-all" 
+                        type="text" 
+                        value={currentSrNo}
+                        onChange={(e) => setCurrentSrNo(e.target.value)}
+                        placeholder="e.g. 1"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="font-label text-sm font-medium text-on-surface-variant flex items-center gap-2">
+                        Current Reg.Page No
+                      </label>
+                      <input 
+                        className="w-full bg-surface-container-highest border-transparent focus:border-primary/30 focus:bg-surface-container-lowest focus:ring-0 rounded-md font-body text-on-surface font-mono px-4 py-3 transition-all" 
+                        type="text" 
+                        value={currentPageNo}
+                        onChange={(e) => setCurrentPageNo(e.target.value)}
+                        placeholder="e.g. 1"
                       />
                     </div>
                   </div>
