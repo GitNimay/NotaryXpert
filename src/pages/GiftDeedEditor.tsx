@@ -13,6 +13,7 @@ interface Person {
   age: string;
   addr: string;
   aadhar: string;
+  pan?: string;
   phone?: string;
   email?: string;
   photo?: string;
@@ -102,7 +103,7 @@ export function GiftDeedEditor() {
   const [docDate, setDocDate] = useState(new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }));
   const [clientName, setClientName] = useState("");
   const [persons, setPersons] = useState<Person[]>([
-    { id: `person-${Date.now()}`, name: '', age: '', addr: '', aadhar: '', phone: '', email: '', photo: undefined, thumb: undefined }
+    { id: `person-${Date.now()}`, name: '', age: '', addr: '', aadhar: '', pan: '', phone: '', email: '', photo: undefined, thumb: undefined }
   ]);
   const [basePdfFile, setBasePdfFile] = useState<File | null>(null);
   const [basePdfPageCount, setBasePdfPageCount] = useState(0);
@@ -130,7 +131,7 @@ export function GiftDeedEditor() {
 
   // --- State Update Handlers ---
   const addPerson = () => {
-    setPersons(prev => [...prev, { id: `person-${Date.now()}`, name: '', age: '', addr: '', aadhar: '', phone: '', email: '', photo: undefined, thumb: undefined }]);
+    setPersons(prev => [...prev, { id: `person-${Date.now()}`, name: '', age: '', addr: '', aadhar: '', pan: '', phone: '', email: '', photo: undefined, thumb: undefined }]);
   };
 
   const deletePerson = (id: string) => {
@@ -262,13 +263,15 @@ export function GiftDeedEditor() {
                 if (!person.name || person.name.trim() === '') return;
                 
                 const validAadhar = person.aadhar && person.aadhar.trim().length > 5 && !person.aadhar.includes('XXXX-XXXX');
-                let uniqueKey = validAadhar ? person.aadhar.trim() : person.name.trim().toLowerCase();
+                const validPan = person.pan && person.pan.trim().length > 5;
+                let uniqueKey = validAadhar ? person.aadhar.trim() : (validPan ? person.pan.trim() : person.name.trim().toLowerCase());
                 
                 if (!clientMap.has(uniqueKey)) {
                    clientMap.set(uniqueKey, {
                       id: uniqueKey,
                       name: person.name,
                       aadhar: person.aadhar || '',
+                      pan: person.pan || '',
                       addr: person.addr || '',
                       age: person.age || '',
                       phone: person.phone || '',
@@ -465,7 +468,19 @@ export function GiftDeedEditor() {
       return new Blob([notaryPdfArrayBuffer], { type: 'application/pdf' });
   };
 
+  const validatePersons = () => {
+    for (let i = 0; i < persons.length; i++) {
+      const p = persons[i];
+      if (!p.aadhar?.trim() && !p.pan?.trim()) {
+        alert(`Please enter either Aadhar Card or PAN Card for Person ${i + 1}`);
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleAutoGenerateAndUploadPdf = async () => {
+    if (!validatePersons()) return;
     setIsUploadingPdf(true);
     try {
       const mergedBlob = await generateMergedPdfBlob();
@@ -509,6 +524,7 @@ export function GiftDeedEditor() {
   };
 
   const handlePrint = async () => {
+    if (!validatePersons()) return;
     if (basePdfFile) {
        // We have an uploaded base PDF, so we must structurally merge before handing it to the OS printer!
        try {
@@ -635,7 +651,10 @@ export function GiftDeedEditor() {
           </div>
 
           <div className="flex justify-between items-center mb-6 pt-6 border-t border-outline-variant/15">
-            <h3 className="font-headline text-xl font-bold text-on-surface">Parties Involved</h3>
+            <div>
+              <h3 className="font-headline text-xl font-bold text-on-surface">Parties Involved</h3>
+              <p className="text-xs text-on-surface-variant mt-1">Either Aadhar Card or PAN Card is required for each party.</p>
+            </div>
             <button onClick={addPerson} className="flex items-center gap-2 bg-secondary-container text-on-secondary-container px-4 py-2.5 rounded-xl font-body font-medium hover:opacity-90 active:scale-95 transition-all text-sm shadow-sm">
               <Plus size={16} /> Add Person
             </button>
@@ -652,7 +671,7 @@ export function GiftDeedEditor() {
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-x-6 gap-y-4">
                   <div 
-                    className="md:col-span-5 relative" 
+                    className="md:col-span-4 relative" 
                     onBlur={(e) => {
                       if (!e.currentTarget.contains(e.relatedTarget as Node)) {
                          setFocusedPersonId(null);
@@ -697,9 +716,13 @@ export function GiftDeedEditor() {
                     <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Age</label>
                     <input type="text" value={person.age} onChange={(e) => updatePerson(person.id, 'age', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="Age" />
                   </div>
-                  <div className="md:col-span-5">
-                    <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Aadhar Card</label>
+                  <div className="md:col-span-3">
+                    <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Aadhar Card *</label>
                     <input type="text" value={person.aadhar} onChange={(e) => updatePerson(person.id, 'aadhar', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="XXXX-XXXX-XXXX" />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">PAN Card *</label>
+                    <input type="text" value={person.pan || ''} onChange={(e) => updatePerson(person.id, 'pan', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="ABCDE1234F" />
                   </div>
                   <div className="md:col-span-12">
                     <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Residential Address</label>
@@ -780,8 +803,10 @@ export function GiftDeedEditor() {
                  {pageIndex === 0 && (
                    <>
                      <div className="text-center">
-                       <h2 className="font-bold text-2xl m-0">Adv. Sameer Shrikant Vispute</h2>
-                       <small>Bombay High Court Notary (Govt. of India) Reg. No. 57704 </small>
+                       <h2 className="font-bold text-2xl m-0">Mr. Sameer Shrikant Vispute</h2>
+                       <small>BLS., LLB., DIPL</small><br/>
+                       <small>Bombay High Court Notary (Govt. of India) </small><br />
+                       <small>Notary (Govt. of India) Reg. No. 57704</small>
                        <br />
                        <small>Shree Bhagwati Krupa, Pendse Nagar, Lane No 2, Dombivli (E), Dist. Thane - 421201.</small>
                      </div>
@@ -803,17 +828,13 @@ export function GiftDeedEditor() {
                          <p style={{ lineHeight: 1.3, margin: 0, marginBottom: '16px' }}>
                            I Mr <span className="font-bold print:font-normal">{person.name}</span> aged <span className="font-bold print:font-normal ml-1">{person.age}</span> yrs.<br />
                            Residing at <span className="font-bold print:font-normal">{person.addr}</span><br />
-                           Aadhar Card No: <span className="font-bold print:font-normal">{person.aadhar}</span>
+                           {person.aadhar && <>Aadhar Card No: <span className="font-bold print:font-normal">{person.aadhar}</span></>}
+                           {person.aadhar && person.pan && <span className="mx-2">|</span>}
+                           {person.pan && <>PAN Card No: <span className="font-bold print:font-normal">{person.pan}</span></>}
                            {person.phone && <><br />Phone: <span className="font-bold print:font-normal">{person.phone}</span></>}
                            {person.email && <><br />Email: <span className="font-bold print:font-normal">{person.email}</span></>}
                          </p>
                          <div className="flex justify-between items-center mt-4">
-                           <div className="flex flex-col items-center">
-                             <div className="w-[120px] h-[120px] border border-[#000000] relative flex items-center justify-center bg-[#f9fafb] overflow-hidden">
-                               {person.photo && <img src={getSafeImageUrl(person.photo)} crossOrigin="anonymous" className="w-full h-full object-cover" alt="Captured" />}
-                             </div>
-                           </div>
-                           
                            <div>
                              <div className="w-[200px] border-t border-[#000000] text-center mt-[20px] font-bold">Signature</div>
                            </div>
@@ -821,6 +842,12 @@ export function GiftDeedEditor() {
                            <div className="flex flex-col items-center">
                              <div className="w-[120px] h-[80px] border border-[#000000] relative flex items-center justify-center bg-[#f9fafb] overflow-hidden">
                                {person.thumb && <img src={getSafeImageUrl(person.thumb)} crossOrigin="anonymous" className="w-full h-full object-contain p-1" alt="Thumbprint" />}
+                             </div>
+                           </div>
+                           
+                           <div className="flex flex-col items-center">
+                             <div className="w-[120px] h-[120px] border border-[#000000] relative flex items-center justify-center bg-[#f9fafb] overflow-hidden">
+                               {person.photo && <img src={getSafeImageUrl(person.photo)} crossOrigin="anonymous" className="w-full h-full object-cover" alt="Captured" />}
                              </div>
                            </div>
                          </div>
