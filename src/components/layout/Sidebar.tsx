@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { LayoutDashboard, FileText, Users, Settings, CircleHelp, LogOut, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { useState, useRef } from "react";
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -9,6 +10,8 @@ interface SidebarProps {
 
 export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
   const location = useLocation();
+  const [isHovered, setIsHovered] = useState(false);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const links = [
     { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -17,25 +20,52 @@ export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
     { to: "/settings", icon: Settings, label: "Settings" },
   ];
 
+  // Effective state: expanded if manually expanded OR hovered
+  const isExpanded = !isCollapsed || isHovered;
+
+  const handleMouseEnter = () => {
+    if (isCollapsed) {
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+      setIsHovered(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (isCollapsed) {
+      // Delay collapsing for a few seconds as requested
+      hoverTimeoutRef.current = setTimeout(() => {
+        setIsHovered(false);
+      }, 1500); // 1.5 seconds delay
+    }
+  };
+
   return (
-    <nav className={cn(
-      "bg-surface-container-low text-primary flex-col h-screen py-8 border-r-0 fixed left-0 top-0 z-20 hidden md:flex transition-all duration-300 ease-in-out",
-      isCollapsed ? "w-20" : "w-64"
-    )}>
-      {/* Collapse Toggle */}
+    <nav 
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={cn(
+        "bg-surface-container-low text-primary flex-col h-screen py-8 border-r-0 fixed left-0 top-0 z-40 hidden md:flex transition-all duration-300 ease-in-out shadow-xl",
+        isExpanded ? "w-64" : "w-20"
+      )}
+    >
+      {/* Collapse Toggle (Manual override) */}
       <button 
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute -right-3 top-12 bg-primary text-on-primary rounded-full p-1 shadow-md hover:scale-110 transition-transform z-30 border-2 border-surface"
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsCollapsed(!isCollapsed);
+          setIsHovered(false);
+        }}
+        className="absolute -right-3 top-12 bg-primary text-on-primary rounded-full p-1 shadow-md hover:scale-110 transition-transform z-50 border-2 border-surface"
       >
         {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
       </button>
 
-      <div className={cn("px-4 mb-10 flex flex-col items-start transition-all", isCollapsed ? "items-center px-0" : "px-8")}>
+      <div className={cn("px-4 mb-10 flex flex-col items-start transition-all", !isExpanded ? "items-center px-0" : "px-8")}>
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-primary/20">
              <FileText className="text-on-primary" size={24} />
           </div>
-          {!isCollapsed && (
+          {isExpanded && (
             <div className="flex flex-col">
               <h1 className="font-headline text-xl font-bold text-on-surface whitespace-nowrap">NoteryXpert</h1>
               <span className="font-label text-[10px] text-on-surface-variant tracking-widest uppercase">Editorial Authority</span>
@@ -49,12 +79,12 @@ export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
           to="/documents/new" 
           className={cn(
             "gradient-primary text-on-primary rounded-xl py-3 flex items-center gap-2 hover:opacity-90 transition-all font-body font-medium shadow-sm",
-            isCollapsed ? "justify-center px-0 h-12" : "px-4 justify-start"
+            !isExpanded ? "justify-center px-0 h-12" : "px-4 justify-start"
           )}
-          title={isCollapsed ? "New Document" : ""}
+          title={!isExpanded ? "New Document" : ""}
         >
           <Plus size={18} />
-          {!isCollapsed && <span className="whitespace-nowrap">New Document</span>}
+          {isExpanded && <span className="whitespace-nowrap">New Document</span>}
         </Link>
       </div>
 
@@ -67,21 +97,21 @@ export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
               <li key={link.to}>
                 <Link
                   to={link.to}
-                  title={isCollapsed ? link.label : ""}
+                  title={!isExpanded ? link.label : ""}
                   className={cn(
                     "py-3 flex items-center transition-all duration-200",
-                    isCollapsed ? "px-0 justify-center" : "px-8 gap-4",
+                    !isExpanded ? "px-0 justify-center" : "px-8 gap-4",
                     isActive
                       ? cn(
                           "text-primary font-bold",
-                          !isCollapsed ? "bg-surface-container-lowest rounded-l-full ml-4 pl-4 translate-x-1" : ""
+                          isExpanded ? "bg-surface-container-lowest rounded-l-full ml-4 pl-4 translate-x-1" : ""
                         )
                       : "text-on-surface hover:text-primary translate-x-1"
                   )}
                 >
                   <link.icon className={cn(isActive ? "fill-primary/20 text-primary" : "")} size={20} />
-                  {!isCollapsed && <span className="whitespace-nowrap">{link.label}</span>}
-                  {isCollapsed && isActive && <div className="absolute left-0 w-1 h-6 bg-primary rounded-r-full" />}
+                  {isExpanded && <span className="whitespace-nowrap">{link.label}</span>}
+                  {!isExpanded && isActive && <div className="absolute left-0 w-1 h-6 bg-primary rounded-r-full" />}
                 </Link>
               </li>
             );
@@ -92,15 +122,15 @@ export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
       <div className="mt-auto">
         <ul className="space-y-1 font-body font-medium text-sm">
           <li>
-            <a href="#" className={cn("text-on-surface py-3 flex items-center hover:text-primary transition-all translate-x-1 duration-200", isCollapsed ? "px-0 justify-center" : "px-8 gap-4")}>
+            <a href="#" className={cn("text-on-surface py-3 flex items-center hover:text-primary transition-all translate-x-1 duration-200", !isExpanded ? "px-0 justify-center" : "px-8 gap-4")}>
               <CircleHelp size={20} />
-              {!isCollapsed && <span>Help Center</span>}
+              {isExpanded && <span>Help Center</span>}
             </a>
           </li>
           <li>
-            <button className={cn("w-full text-on-surface py-3 flex items-center hover:text-primary transition-all translate-x-1 duration-200", isCollapsed ? "px-0 justify-center" : "px-8 gap-4")}>
+            <button className={cn("w-full text-on-surface py-3 flex items-center hover:text-primary transition-all translate-x-1 duration-200", !isExpanded ? "px-0 justify-center" : "px-8 gap-4")}>
               <LogOut size={20} />
-              {!isCollapsed && <span>Sign Out</span>}
+              {isExpanded && <span>Sign Out</span>}
             </button>
           </li>
         </ul>
