@@ -87,32 +87,19 @@ export function Settings() {
                 <div className="bg-surface-container-lowest rounded-xl p-6 md:p-8 transition-colors hover:bg-surface-bright editorial-shadow">
                   <h3 className="text-2xl font-headline font-bold text-on-surface mb-6">Profile Details</h3>
                   
-                  <div className="flex flex-col md:flex-row gap-8 mb-8">
-                    <div className="flex-shrink-0 flex flex-col items-center gap-4">
-                      <div className="w-32 h-32 rounded-full overflow-hidden bg-surface-container border-4 border-surface shadow-sm">
-                        <img 
-                          alt="Profile Photo" 
-                          className="w-full h-full object-cover" 
-                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2ykJjaTP-wHFBbHT5Ly4PPHmyWX8mhCq-5ggI2VUZYdEb8W1MNwVVBWKftFZlsaVZESJtyVAb7SFI214pWe6WCgGZDj2QzSIqdX2X1BztNub0_z0XOx9cjR-wYOZFnsaRiOqRfl7ozCDUgbsV3CNWC3mKuFz-V8Tve6ydWr7Ckf6e8bkwnW-nAV-XAQdP8zgPP-IaxVE4PL4lRL7FiR9Oe3wR0J_Js1lkJyanH73Irqn4zhd5K3OSVH226EScp4c5D8RUmwsPNFbo"
-                        />
-                      </div>
-                      <button className="px-4 py-2 bg-surface-container-high text-primary font-body text-sm font-medium rounded-lg hover:bg-surface-variant transition-colors">
-                        Change Photo
-                      </button>
-                    </div>
-                    
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="mb-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="flex flex-col gap-2">
                         <label className="font-label text-sm font-medium text-on-surface-variant">Full Name</label>
-                        <input className="w-full bg-surface-container-highest border-transparent focus:border-primary/30 focus:bg-surface-container-lowest focus:ring-0 rounded-md font-body text-on-surface px-4 py-3 transition-all" type="text" defaultValue="Eleanor Vance" />
+                        <input className="w-full bg-surface-container-high border-transparent rounded-md font-body text-on-surface px-4 py-3 opacity-80 cursor-not-allowed" type="text" value="Sameer Shrikant Vispute" readOnly />
                       </div>
                       <div className="flex flex-col gap-2">
                         <label className="font-label text-sm font-medium text-on-surface-variant">Professional Title</label>
-                        <input className="w-full bg-surface-container-highest border-transparent focus:border-primary/30 focus:bg-surface-container-lowest focus:ring-0 rounded-md font-body text-on-surface px-4 py-3 transition-all" type="text" defaultValue="Senior Notary Public" />
+                        <input className="w-full bg-surface-container-high border-transparent rounded-md font-body text-on-surface px-4 py-3 opacity-80 cursor-not-allowed" type="text" value="Advocate High Court, BLS., LLB., DIPL" readOnly />
                       </div>
                       <div className="flex flex-col gap-2 md:col-span-2">
                         <label className="font-label text-sm font-medium text-on-surface-variant">Email Address</label>
-                        <input className="w-full bg-surface-container-highest border-transparent focus:border-primary/30 focus:bg-surface-container-lowest focus:ring-0 rounded-md font-body text-on-surface px-4 py-3 transition-all" type="email" defaultValue="e.vance@noteryxpert.com" />
+                        <input className="w-full bg-surface-container-high border-transparent rounded-md font-body text-on-surface px-4 py-3 opacity-80 cursor-not-allowed" type="email" value="advsameervispute@gmail.com" readOnly />
                       </div>
                     </div>
                   </div>
