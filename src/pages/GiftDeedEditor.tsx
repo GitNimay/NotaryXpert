@@ -1,8 +1,6 @@
-import React, { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Layout } from "../components/layout/Layout";
-
 import { Camera, Fingerprint, Printer, X, RefreshCw, Plus, Gavel, Search, Loader2, Save, UploadCloud, FileText, Eye, Edit3, Mail } from "lucide-react";
-
 import { collection, addDoc, getDoc, doc, updateDoc, setDoc, query, orderBy, limit, getDocs, where } from "firebase/firestore";
 import { ref, uploadString, getDownloadURL } from "firebase/storage";
 import { db } from "../firebaseDb";
@@ -424,6 +422,16 @@ export function GiftDeedEditor() {
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
   const [isSendingMail, setIsSendingMail] = useState(false);
 
+  // Resizable panel states
+  const [dataEntryPanelWidthPx, setDataEntryPanelWidthPx] = useState(0);
+  const minPanelWidth = 300; // Minimum width for data entry panel in pixels
+  const maxPanelWidth = 800; // Maximum width for data entry panel in pixels
+  const resizerRef = useRef<HTMLDivElement>(null);
+  const parentContainerRef = useRef<HTMLDivElement>(null); // Ref for the flex container
+  const isResizing = useRef(false);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
+  const [previewScale, setPreviewScale] = useState(1);
+
   const syncDocNameState = (value: string) => {
     setDocName(value);
     setDocNameSelection(DOC_NAME_OPTIONS.includes(value as typeof DOC_NAME_OPTIONS[number]) ? value : OTHER_DOC_NAME_OPTION);
@@ -490,6 +498,70 @@ export function GiftDeedEditor() {
       }
     };
     fetchNextSequence();
+  }, []);
+
+  // Resizing logic for the data entry panel
+  const startResizing = useCallback((e: MouseEvent | TouchEvent) => {
+    if (window.innerWidth < 1280) return; // Only allow resizing on XL screens and above
+    isResizing.current = true;
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    document.body.style.pointerEvents = 'none'; // Prevent text selection during drag
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    isResizing.current = false;
+    document.body.style.cursor = 'default';
+    document.body.style.userSelect = 'auto';
+    document.body.style.pointerEvents = 'auto';
+  }, []);
+
+  const resize = useCallback((e: MouseEvent | TouchEvent) => {
+    if (!isResizing.current || !parentContainerRef.current) return;
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const parentRect = parentContainerRef.current.getBoundingClientRect();
+
+    let newWidth = clientX - parentRect.left;
+    newWidth = Math.max(minPanelWidth, Math.min(newWidth, maxPanelWidth));
+    setDataEntryPanelWidthPx(newWidth);
+  }, [minPanelWidth, maxPanelWidth]);
+
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => resize(e);
+    const handleGlobalMouseUp = () => stopResizing();
+    const handleGlobalTouchMove = (e: TouchEvent) => resize(e);
+    const handleGlobalTouchEnd = () => stopResizing();
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('touchmove', handleGlobalTouchMove);
+    window.addEventListener('touchend', handleGlobalTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener('touchmove', handleGlobalTouchMove);
+      window.removeEventListener('touchend', handleGlobalTouchEnd);
+    };
+  }, [resize, stopResizing]);
+
+  // Set initial width for data entry panel based on breakpoints
+  useEffect(() => {
+    const setInitialWidth = () => {
+      if (window.innerWidth >= 1536) { // 2xl breakpoint
+        setDataEntryPanelWidthPx(500); // approx 31rem
+      } else if (window.innerWidth >= 1280) { // xl breakpoint
+        setDataEntryPanelWidthPx(368); // approx 23rem
+      } else {
+        // For smaller screens, resizing is disabled, and CSS handles width.
+        setDataEntryPanelWidthPx(368); // Default to XL size for when it becomes XL
+      }
+    };
+
+    setInitialWidth();
+    window.addEventListener('resize', setInitialWidth);
+    return () => window.removeEventListener('resize', setInitialWidth);
   }, []);
 
   const [knownClients, setKnownClients] = useState<Person[]>([]);
@@ -639,6 +711,34 @@ export function GiftDeedEditor() {
     setKNo(newKNo);
     setPageNo("1");
   };
+
+  // Calculate preview page scale based on available space
+  useEffect(() => {
+    const calculatePreviewScale = () => {
+      if (previewContainerRef.current && window.innerWidth >= 1280) { // Only scale on XL and above
+        const containerWidth = previewContainerRef.current.offsetWidth;
+        const A4_WIDTH_PX = 210 * 3.7795275591; // 210mm in pixels (1mm = 3.7795275591px at 96dpi)
+        // The article itself will be 210mm wide, padding is internal.
+
+        // If the container is smaller than the A4 width, scale down.
+        // Otherwise, keep scale at 1 (don't upscale).
+        if (containerWidth < A4_WIDTH_PX) {
+          setPreviewScale(containerWidth / A4_WIDTH_PX);
+        } else {
+          setPreviewScale(1);
+        }
+      } else {
+        setPreviewScale(1); // No scaling on smaller screens or if ref not ready
+      }
+    };
+
+    calculatePreviewScale(); // Initial calculation
+    const observer = new ResizeObserver(calculatePreviewScale);
+    if (previewContainerRef.current) observer.observe(previewContainerRef.current);
+    return () => {
+      if (previewContainerRef.current) observer.unobserve(previewContainerRef.current);
+    };
+  }, [dataEntryPanelWidthPx]); // Recalculate when dataEntryPanelWidthPx changes (indirectly affects previewContainerRef.current.offsetWidth)
 
   const handleSaveToFirebase = async (overridePdfUrl?: string, silent: boolean = false) => {
     if (!silent) setIsSaving(true);
@@ -971,10 +1071,20 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
             )}
           </button>
         </div>
-
-        <div className="flex flex-col xl:flex-row gap-4 p-3 md:p-4 2xl:gap-6 2xl:p-6 justify-center items-start print:block print:p-0">
-
-          <div className={`w-full xl:w-[23rem] 2xl:w-[31rem] bg-surface-container-lowest p-4 rounded-xl editorial-shadow no-print border border-outline-variant/15 font-body shrink-0 ${showPreviewMobile ? 'hidden xl:block' : 'block'}`}>
+        <div ref={parentContainerRef} className="flex flex-col xl:flex-row gap-4 p-3 md:p-4 2xl:gap-6 2xl:p-6 justify-center items-start print:block print:p-0">
+          <div
+            className={`w-full bg-surface-container-lowest p-4 rounded-xl editorial-shadow no-print border border-outline-variant/15 font-body shrink-0 relative ${showPreviewMobile ? 'hidden xl:block' : 'block'}`}
+            style={window.innerWidth >= 1280 ? { width: dataEntryPanelWidthPx + 'px' } : {}} // Apply dynamic width only on XL and above
+          >
+            {window.innerWidth >= 1280 && ( // Only show resizer on XL and above
+              <div
+                ref={resizerRef}
+                onMouseDown={startResizing}
+                onTouchStart={startResizing}
+                className="absolute top-0 right-[-8px] w-4 h-full cursor-ew-resize z-10 hover:bg-primary/20 transition-colors rounded-full"
+                title="Drag to resize data entry panel"
+              ></div>
+            )}
             <div className="mb-4">
               <div className="flex flex-col">
                 <h2 className="font-headline text-2xl font-bold text-on-surface">Data Entry</h2>
@@ -1290,7 +1400,7 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
             </div>
           </div>
 
-          <div id="document-to-print" className={`w-full xl:sticky xl:top-4 xl:w-[210mm] xl:min-w-[210mm] xl:flex-none flex flex-col items-center print:static print:block print:w-[210mm] print:m-0 print:p-0 ${showPreviewMobile ? 'flex' : 'hidden xl:flex'}`} style={{ color: '#000000' }}>
+          <div id="document-to-print" className={`w-full xl:sticky xl:top-4 flex flex-col items-center print:static print:block print:w-[210mm] print:m-0 print:p-0 ${showPreviewMobile ? 'flex' : 'hidden xl:flex'}`} style={{ color: '#000000', flex: 1, minWidth: 0 }}>
             {previewChunks.map((chunk, pageIndex) => (
               <PreviewPage
                 key={pageIndex}
