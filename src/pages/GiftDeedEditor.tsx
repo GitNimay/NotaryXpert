@@ -1,10 +1,8 @@
 import React, { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Layout } from "../components/layout/Layout";
-import { Camera, Fingerprint, Printer, X, RefreshCw, Plus, Gavel, Search, Loader2, Save, UploadCloud, FileText, Eye, Edit3, Mail } from "lucide-react";
-import { collection, addDoc, getDoc, doc, updateDoc, setDoc, query, orderBy, limit, getDocs, where } from "firebase/firestore";
-import { ref, uploadString, getDownloadURL } from "firebase/storage";
-import { db } from "../firebaseDb";
-import { storage } from "../firebaseStorage";
+import { Camera, Fingerprint, Printer, X, RefreshCw, Plus, Gavel, Search, Loader2, UploadCloud, FileText, Eye, Edit3, Mail, Save } from "lucide-react";
+import { collection, addDoc, getDoc, doc, setDoc, query, orderBy, limit, getDocs, where } from "firebase/firestore"; // Keep db for Firestore operations
+import { db } from "../firebaseDb"; // Keep db for Firestore operations
 // New interface for a person
 interface Person {
   id: string;
@@ -29,6 +27,10 @@ function getSafeImageUrl(url?: string) {
   if (url.startsWith("data:image")) return url;
   return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
 }
+
+// Define Cloudinary configuration (consider using environment variables for CLOUDINARY_CLOUD_NAME in production)
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "dsyow3tjq"; // Replace with your actual Cloudinary cloud name
+const CLOUDINARY_UPLOAD_PRESET = "notery"; // Replace with your actual Cloudinary upload preset
 
 function buildPreviewChunks<T extends { email?: string; phone?: string }>(persons: T[]) {
   const chunks: T[][] = [];
@@ -251,18 +253,41 @@ function WebcamCapture({ onCapture, onClose }: { onCapture: (img: string) => voi
   }, []); // Run exactly once on mount!
 
   const capture = () => {
-    if (videoRef.current) {
+    if (videoRef.current && videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+      const videoWidth = videoRef.current.videoWidth;
+      const videoHeight = videoRef.current.videoHeight;
+
       const canvas = document.createElement('canvas');
       canvas.width = videoRef.current.videoWidth;
       canvas.height = videoRef.current.videoHeight;
       const ctx = canvas.getContext('2d');
       if (ctx) {
+        const MAX_DIMENSION = 800; // Max width or height for the captured image
+        let width = videoWidth;
+        let height = videoHeight;
+
+        // Calculate new dimensions to fit within MAX_DIMENSION while maintaining aspect ratio
+        if (width > height) {
+          if (width > MAX_DIMENSION) {
+            height *= MAX_DIMENSION / width;
+            width = MAX_DIMENSION;
+          }
+        } else {
+          if (height > MAX_DIMENSION) {
+            width *= MAX_DIMENSION / height;
+            height = MAX_DIMENSION;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
         // Flip the context horizontally to un-mirror the captured image,
         // which is more appropriate for an official document photo.
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
-        ctx.drawImage(videoRef.current, 0, 0);
-        onCapture(canvas.toDataURL('image/jpeg'));
+        ctx.drawImage(videoRef.current, 0, 0, width, height); // Draw with new dimensions
+        onCapture(canvas.toDataURL('image/jpeg', 0.7)); // Standardize quality to 0.7
         onClose();
       }
     }
@@ -407,7 +432,37 @@ export function GiftDeedEditor() {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        updatePerson(personId, type, reader.result as string);
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+
+          const MAX_DIMENSION = 800; // Max width or height for the image
+          let width = img.width;
+          let height = img.height;
+
+          // Calculate new dimensions to fit within MAX_DIMENSION while maintaining aspect ratio
+          if (width > height) {
+            if (width > MAX_DIMENSION) {
+              height *= MAX_DIMENSION / width;
+              width = MAX_DIMENSION;
+            }
+          } else {
+            if (height > MAX_DIMENSION) {
+              width *= MAX_DIMENSION / height;
+              height = MAX_DIMENSION;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          // Get the compressed data URL
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7); // 0.7 is a good balance for quality/size
+          updatePerson(personId, type, compressedDataUrl);
+        };
+        img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     }
@@ -421,6 +476,9 @@ export function GiftDeedEditor() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
   const [isSendingMail, setIsSendingMail] = useState(false);
+  const [showUploadProgress, setShowUploadProgress] = useState(false);
+  const [uploadStatusMessage, setUploadStatusMessage] = useState("Initializing...");
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Resizable panel states
   const [dataEntryPanelWidthPx, setDataEntryPanelWidthPx] = useState(0);
@@ -751,33 +809,49 @@ export function GiftDeedEditor() {
         return newP;
       });
 
-      for (let i = 0; i < personsToSave.length; i++) {
-        const p = personsToSave[i];
+      const uploadPromises: Promise<void>[] = [];
 
-        // Upload photo if it's a new base64 string
+      const uploadImageToCloudinary = async (base64Data: string, type: 'photo' | 'thumb') => {
+        const formData = new FormData();
+        formData.append('file', base64Data);
+        formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+        formData.append('folder', `notery_images/${type}`); // Separate folders for photos/thumbs
+
+        const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(`Cloudinary image upload failed for ${type}: ${errorData.error?.message || JSON.stringify(errorData)}`);
+        }
+        const data = await response.json();
+        return data.secure_url;
+      };
+
+      personsToSave.forEach((p, i) => {
+        // Handle photo upload
         if (p.photo && String(p.photo).startsWith('data:image')) {
-          console.log(`Uploading photo for person ${i} to Firebase Storage...`);
-          const photoRef = ref(storage, `documents/${Date.now()}_${i}_photo`);
-          const downloadUrl = await Promise.race([
-            uploadString(photoRef, p.photo, 'data_url').then(() => getDownloadURL(photoRef)),
-            new Promise<string>((_, r) => setTimeout(() => r(new Error('Firebase Storage photo upload timed out! Check Storage Rules.')), 15000))
-          ]);
-          p.photo = downloadUrl;
-          console.log(`Photo ${i} uploaded successfully.`);
+          uploadPromises.push((async () => {
+            console.log(`Uploading photo for person ${i} to Cloudinary...`);
+            const downloadUrl = await uploadImageToCloudinary(p.photo, 'photo');
+            p.photo = downloadUrl;
+            console.log(`Photo ${i} uploaded successfully.`);
+          })());
         }
 
-        // Upload thumb if it's a new base64 string
+        // Handle thumb upload
         if (p.thumb && String(p.thumb).startsWith('data:image')) {
-          console.log(`Uploading thumb for person ${i} to Firebase Storage...`);
-          const thumbRef = ref(storage, `documents/${Date.now()}_${i}_thumb`);
-          const downloadUrl = await Promise.race([
-            uploadString(thumbRef, p.thumb, 'data_url').then(() => getDownloadURL(thumbRef)),
-            new Promise<string>((_, r) => setTimeout(() => r(new Error('Firebase Storage thumb upload timed out! Check Storage Rules.')), 15000))
-          ]);
-          p.thumb = downloadUrl;
-          console.log(`Thumb ${i} uploaded successfully.`);
+          uploadPromises.push((async () => {
+            console.log(`Uploading thumb for person ${i} to Cloudinary...`);
+            const downloadUrl = await uploadImageToCloudinary(p.thumb, 'thumb');
+            p.thumb = downloadUrl;
+            console.log(`Thumb ${i} uploaded successfully.`);
+          })());
         }
-      }
+      });
+      await Promise.all(uploadPromises); // Wait for all image uploads to complete concurrently
 
       // Ensure unique combination of kNo and pageNo
       if (kNo && pageNo) {
@@ -937,48 +1011,76 @@ export function GiftDeedEditor() {
 
   const handleAutoGenerateAndUploadPdf = async () => {
     if (!validatePersons()) return;
+    setShowUploadProgress(true); // Show progress bar
     setIsUploadingPdf(true);
+    setUploadProgress(0); // Start progress from 0
+    setUploadStatusMessage("Generating PDF document...");
     try {
       const safeClientName = persons.length > 0 && persons[0].name ? persons[0].name.trim().replace(/\s+/g, '_') : 'Client';
       const mergedBlob = await generateMergedPdfBlob();
-      const finalFile = new File([mergedBlob], `${safeClientName}_${srNo || '01'}.pdf`, { type: 'application/pdf' });
+      
+      setUploadProgress(10); // After generation, before Cloudinary upload
+      setUploadStatusMessage("Uploading PDF to Cloudinary...");
 
-      const cloudName = "dsyow3tjq";
-      const formData = new FormData();
-      formData.append("file", finalFile);
-      formData.append("upload_preset", "notery");
+      let newPdfUrl = '';
+      try {
+        const reader = new FileReader();
+        const finalFile = new File([mergedBlob], `${safeClientName}_${srNo || '01'}.pdf`, { type: 'application/pdf' });
 
-      // Auto route pushes PDFs to the global /auto handler so Cloudinary sorts the asset
-      console.log('Sending PDF binary to Cloudinary...');
-      const response = await Promise.race([
-        fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
-          method: "POST",
-          body: formData,
-        }),
-        new Promise<Response>((_, r) => setTimeout(() => r(new Error('Cloudinary upload timed out! Your network may be blocking it.')), 25000))
-      ]);
+        setUploadProgress(20); // After creating File object
+        setUploadStatusMessage("Preparing PDF for upload...");
+        reader.readAsDataURL(finalFile);
+        await new Promise<void>((resolve, reject) => {
+          reader.onloadend = async () => {
+            const base64Pdf = reader.result as string;
+            const formData = new FormData();
+            formData.append('file', base64Pdf);
+            formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+            formData.append('folder', 'notery_pdfs'); // Optional: organize uploads in a folder
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData?.error?.message || "Cloudinary configuration failure.");
+            setUploadProgress(30); // Before sending to Cloudinary
+            setUploadStatusMessage("Sending PDF data to Cloudinary...");
+
+            const cloudinaryResponse = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!cloudinaryResponse.ok) {
+                const errorData = await cloudinaryResponse.json();
+                console.error("Cloudinary API Error Response:", errorData); // Log full error response
+                throw new Error(`Cloudinary upload failed: ${errorData.error?.message || JSON.stringify(errorData)}`);
+            }
+
+            const cloudinaryData = await cloudinaryResponse.json();
+            setUploadProgress(70); // After Cloudinary upload completes
+            setUploadStatusMessage("Cloudinary upload complete. Processing response...");
+            newPdfUrl = cloudinaryData.secure_url;
+            resolve();
+          };
+          reader.onerror = (error) => {
+              reject(new Error("Failed to read PDF blob as Data URL."));
+          };
+        });
+        // Auto-save EVERYTHING to Firebase unconditionally silently
+        setUploadProgress(80); // After Cloudinary upload, before Firestore save
+        setUploadStatusMessage("Saving document details to database...");
+        await handleSaveToFirebase(newPdfUrl, true);
+        setUploadProgress(100); // After all saves
+        setPdfUrl(newPdfUrl);
+        setUploadStatusMessage("Document saved successfully!");
+      } catch (error: any) {
+        console.error("Cloudinary upload error:", error);
+        throw new Error('Failed to upload PDF. Please check your network or Cloudinary configuration.');
       }
-
-      const data = await response.json();
-      const newPdfUrl = data.secure_url;
-      if (!newPdfUrl) {
-        throw new Error("Cloudinary did not return a PDF URL.");
-      }
-
-      // Auto-save EVERYTHING to Firebase unconditionally silently
-      await handleSaveToFirebase(newPdfUrl, true);
-      setPdfUrl(newPdfUrl);
-
-      alert("Success! PDF automatically generated from screen, uploaded to Cloudinary, and ENTIRE document securely saved to your Database!");
-
     } catch (error: any) {
+      setUploadStatusMessage("Upload failed!");
+      setUploadProgress(0); // Reset progress on error
       console.error("PDF Auto-gen/Upload Error:", error);
       alert(`Action failed: ${error.message}`);
     } finally {
+      setShowUploadProgress(false);
+      setUploadProgress(0); // Reset progress
       setIsUploadingPdf(false);
     }
   };
@@ -1056,6 +1158,27 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
           onClose={() => setActiveCapture(null)}
         />
       )}
+
+      {/* Loading Bar Overlay */}
+      {showUploadProgress && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-surface-container-lowest rounded-xl p-6 shadow-2xl w-full max-w-md flex flex-col items-center gap-4">
+            <Loader2 size={32} className="animate-spin text-primary" />
+            <h3 className="font-headline text-xl font-bold text-on-surface text-center">
+              {uploadStatusMessage}
+            </h3>
+            <div className="w-full bg-outline-variant/30 rounded-full h-2.5">
+              <div
+                className="bg-primary h-2.5 rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${uploadProgress}%` }}
+              ></div>
+            </div>
+            <p className="text-sm text-on-surface-variant">{uploadProgress}% Complete</p>
+          </div>
+        </div>
+      )}
+
+
 
       <main className="flex-1 overflow-y-auto w-full p-0 bg-surface print:bg-white print:p-0">
         {/* Mobile Toggle Button */}
@@ -1353,7 +1476,7 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
 
               <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
                 <button
-                  onClick={handleAutoGenerateAndUploadPdf}
+                  onClick={() => { handleAutoGenerateAndUploadPdf().catch(e => console.error("Background PDF upload failed:", e)); }}
                   disabled={isUploadingPdf}
                   className={`w-full sm:w-auto justify-center flex items-center gap-2 rounded-xl border px-4 py-2.5 font-body text-xs font-bold uppercase tracking-[0.16em] shadow-sm transition-all whitespace-nowrap ${
                     isUploadingPdf
