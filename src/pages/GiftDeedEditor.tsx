@@ -1,13 +1,12 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Layout } from "../components/layout/Layout";
 
 import { Camera, Fingerprint, Printer, X, RefreshCw, Plus, Gavel, Search, Loader2, Save, UploadCloud, FileText, Eye, Edit3, Mail } from "lucide-react";
 
-import { db, storage } from "../firebase";
 import { collection, addDoc, getDoc, doc, updateDoc, setDoc, query, orderBy, limit, getDocs, where } from "firebase/firestore";
 import { ref, uploadString, getDownloadURL } from "firebase/storage";
-import { pdf } from '@react-pdf/renderer';
-import NotaryPdfTemplate from '../components/NotaryPdfTemplate';
+import { db } from "../firebaseDb";
+import { storage } from "../firebaseStorage";
 // New interface for a person
 interface Person {
   id: string;
@@ -21,6 +20,174 @@ interface Person {
   photo?: string;
   thumb?: string;
 }
+
+interface PreviewPerson extends Person {
+  safePhoto?: string;
+  safeThumb?: string;
+}
+
+function getSafeImageUrl(url?: string) {
+  if (!url) return "";
+  if (url.startsWith("data:image")) return url;
+  return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+}
+
+function buildPreviewChunks<T extends { email?: string; phone?: string }>(persons: T[]) {
+  const chunks: T[][] = [];
+  const intermediateLimit = persons.filter((person) => person.email && person.phone).length > 3 ? 3 : 4;
+
+  if (persons.length === 3) {
+    chunks.push(persons.slice(0, 2));
+    chunks.push(persons.slice(2, 3));
+  } else if (persons.length > 0) {
+    chunks.push(persons.slice(0, 3));
+    let index = 3;
+
+    while (index < persons.length) {
+      const remaining = persons.length - index;
+      if (remaining <= 3) {
+        chunks.push(persons.slice(index, index + remaining));
+        index += remaining;
+      } else if (remaining === 4 && intermediateLimit === 4) {
+        chunks.push(persons.slice(index, index + 3));
+        index += 3;
+      } else {
+        chunks.push(persons.slice(index, index + intermediateLimit));
+        index += intermediateLimit;
+      }
+    }
+  } else {
+    chunks.push([]);
+  }
+
+  return chunks;
+}
+
+interface PreviewPageProps {
+  chunk: PreviewPerson[];
+  pageIndex: number;
+  totalPages: number;
+  isLastPage: boolean;
+  totalDocumentPages: number;
+  srNo: string;
+  docDate: string;
+  kNo: string;
+  pageNo: string;
+  docName: string;
+  docPurpose: string;
+}
+
+const PreviewPage = memo(function PreviewPage({
+  chunk,
+  pageIndex,
+  totalPages,
+  isLastPage,
+  totalDocumentPages,
+  srNo,
+  docDate,
+  kNo,
+  pageNo,
+  docName,
+  docPurpose,
+}: PreviewPageProps) {
+  return (
+    <div className="mobile-preview-wrapper no-print md:print:block">
+      <article
+        className="mobile-preview-content relative flex flex-col p-[15mm] box-border print:shadow-none print:w-[210mm] print:max-w-none print:p-[15mm] print:m-0 html2pdf__page-break"
+        style={{
+          color: "#000000",
+          backgroundColor: "#ffffff",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+          fontFamily: '"Times New Roman", serif',
+          pageBreakAfter: isLastPage ? "auto" : "always",
+        }}
+      >
+        <img src="/2.png" alt="watermark" className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[60%] opacity-5 pointer-events-none z-0" />
+
+        {pageIndex === 0 && (
+          <>
+            <div className="flex justify-between items-center text-center gap-2 sm:gap-4">
+              <img src="/1.png" alt="Logo 1" className="h-14 w-14 sm:h-20 sm:w-20 md:h-24 md:w-24 shrink-0" />
+              <div className="flex-1 px-1 min-w-0">
+                <div className="inline-block">
+                  <h2 className="font-bold text-base sm:text-xl md:text-2xl m-0">Mr. Sameer Shrikant Vispute</h2>
+                  <small className="block text-right">BLS., LLB., DIPL</small>
+                  <h4 className="font-bold text-base sm:text-lg md:text-xl m-0">Advocate High Court</h4>
+                </div>
+                <div className="font-black text-sm sm:text-base md:text-[1.1rem] leading-tight my-1.5 uppercase tracking-wide" style={{ color: "#b30000" }}>
+                  Notary  (Govt. of India) <br />Reg. No. 57704
+                </div>
+                <small className="break-words">Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.com</small>
+                <br />
+                <small className="block text-[11px] sm:text-[12px] tracking-tight break-words">Shree Bhagwati Krupa, Pendse Nagar, Lane No 2, Dombivli (E), Dist. Thane - 421201.</small>
+                <small className="block text-[11px] sm:text-[12px] tracking-tight break-words">A002 Om Residency, Khambalpada, Off 90 Feet Road, Thakurli, Dombivli (E), Dist. Thane - 421201</small>
+              </div>
+              <img src="/3.png" alt="Logo 2" className="h-14 w-14 sm:h-20 sm:w-20 md:h-24 md:w-24 shrink-0" />
+            </div>
+
+            <div className="flex justify-between mt-4">
+              <div>Sr No: <span className="font-bold print:font-normal">{srNo}</span></div>
+              <div>Date: <span className="font-bold print:font-normal">{docDate}</span></div>
+            </div>
+            <div>Register No - <span className="font-bold print:font-normal">{kNo}</span></div>
+            <div>Reg.Page No - <span className="font-bold print:font-normal">{pageNo}</span></div>
+
+            <hr style={{ margin: "10px 0", borderTop: "1px solid black", borderBottom: "none", borderLeft: "none", borderRight: "none" }} />
+          </>
+        )}
+
+        <div className="flex-grow">
+          {chunk.map((person) => (
+            <div key={person.id}>
+              <div className="mt-[10px] flex justify-between">
+                <div className="flex-1 pr-4">
+                  <p style={{ lineHeight: 1.3, margin: 0, marginBottom: "16px" }}>
+                    I Mr <span className="font-bold print:font-normal">{person.name}</span> aged <span className="font-bold print:font-normal ml-1">{person.age}</span> yrs.<br />
+                    Residing at <span className="font-bold print:font-normal">{person.addr}</span><br />
+                    {person.aadhar && <>Aadhar Card No: <span className="font-bold print:font-normal">{person.aadhar}</span></>}
+                    {person.aadhar && person.pan && <span className="mx-2">|</span>}
+                    {person.pan && <>PAN Card No: <span className="font-bold print:font-normal">{person.pan}</span></>}
+                    {person.phone && <><br />Phone: <span className="font-bold print:font-normal">{person.phone}</span></>}
+                    {person.email && <><br />Email: <span className="font-bold print:font-normal">{person.email}</span></>}
+                  </p>
+
+                  <div className="mt-4 flex flex-col items-start">
+                    <div className="w-[120px] h-[80px] border relative flex items-center justify-center overflow-hidden" style={{ borderColor: "#000000", backgroundColor: "#f9fafb" }}>
+                      {person.safeThumb && <img src={person.safeThumb} crossOrigin="anonymous" className="w-full h-full object-contain p-1" alt="Thumbprint" />}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-center pl-4 shrink-0">
+                  <div className="w-[120px] h-[120px] border relative flex items-center justify-center overflow-hidden" style={{ borderColor: "#000000", backgroundColor: "#f9fafb" }}>
+                    {person.safePhoto && <img src={person.safePhoto} crossOrigin="anonymous" className="w-full h-full object-cover" alt="Captured" />}
+                  </div>
+
+                  <div className="w-[150px] border-t text-center mt-[50px] font-bold" style={{ borderColor: "#000000" }}>Signature</div>
+                </div>
+              </div>
+              <hr style={{ margin: "8px 0", borderTop: "1px solid black", borderBottom: "none", borderLeft: "none", borderRight: "none" }} />
+            </div>
+          ))}
+
+          {isLastPage && (
+            <>
+              <p style={{ marginTop: "16px", lineHeight: "1.5" }}>
+                That I/we have executed the annexed {docName || "Gift Deed"} dated <span className="font-bold print:font-normal">{docDate || "26th April 2026"}</span>, pertaining to the {docPurpose || "___"} purposes.<br />
+                I/we state that I/we have signed and given left hand digital thumb in the said document beside our respective photographs appearing here in above, and that the said {docName || "Gift Deed"} consists of {totalDocumentPages} pages.
+              </p>
+              <hr style={{ margin: "8px 0", borderTop: "1px solid black", borderBottom: "none", borderLeft: "none", borderRight: "none" }} />
+            </>
+          )}
+        </div>
+
+        <div className="absolute bottom-[30px] left-0 right-0 text-center text-xs" style={{ color: "rgba(0,0,0,0.7)" }}>
+          Page {pageIndex + 1} of {totalPages}
+        </div>
+      </article>
+    </div>
+  );
+});
 
 // Utility Component for Webcam Capture (from original file, slightly adapted)
 function WebcamCapture({ onCapture, onClose }: { onCapture: (img: string) => void, onClose: () => void }) {
@@ -74,19 +241,19 @@ function WebcamCapture({ onCapture, onClose }: { onCapture: (img: string) => voi
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm no-print">
-      <div className="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-2xl max-w-md w-full border border-outline-variant">
-        <div className="p-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center overflow-y-auto p-3 sm:p-4 backdrop-blur-sm no-print">
+      <div className="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-2xl w-full max-w-[26rem] max-h-[calc(100dvh-1.5rem)] border border-outline-variant flex flex-col">
+        <div className="shrink-0 p-3 sm:p-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
           <h3 className="font-label font-bold text-sm uppercase tracking-widest text-on-surface">Capture Photo</h3>
           <button onClick={onClose} className="p-2 hover:bg-surface-container-high rounded-full transition-colors"><X size={20} /></button>
         </div>
-        <div className="relative aspect-[3/4] bg-black">
+        <div className="relative min-h-0 bg-black" style={{ height: "min(58dvh, 28rem)", maxHeight: "calc(100dvh - 9.5rem)" }}>
           <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover scale-x-[-1]" />
         </div>
-        <div className="p-6 flex justify-center gap-4 bg-surface-container-low">
+        <div className="shrink-0 p-3 sm:p-4 flex justify-center gap-4 bg-surface-container-low">
           <button
             onClick={capture}
-            className="flex items-center gap-2 bg-primary text-on-primary px-8 py-3 rounded-full font-label font-bold uppercase tracking-wider shadow-lg hover:opacity-90 active:scale-95 transition-all"
+            className="flex items-center justify-center gap-2 bg-primary text-on-primary px-6 py-3 rounded-full font-label font-bold uppercase tracking-wider shadow-lg hover:opacity-90 active:scale-95 transition-all"
           >
             <Camera size={20} />
             Capture
@@ -289,6 +456,14 @@ export function GiftDeedEditor() {
 
   const [knownClients, setKnownClients] = useState<Person[]>([]);
   const [focusedPersonId, setFocusedPersonId] = useState<string | null>(null);
+  const previewPersons = useDeferredValue(persons);
+  const previewSrNo = useDeferredValue(srNo);
+  const previewKNo = useDeferredValue(kNo);
+  const previewPageNo = useDeferredValue(pageNo);
+  const previewDocName = useDeferredValue(docName);
+  const previewDocPurpose = useDeferredValue(docPurpose);
+  const previewDocDate = useDeferredValue(docDate);
+  const previewBasePdfPageCount = useDeferredValue(basePdfPageCount);
 
   // Auto-fetch known clients for autocomplete
   useEffect(() => {
@@ -349,6 +524,35 @@ export function GiftDeedEditor() {
     setFocusedPersonId(null);
   };
 
+  const focusedPerson = useMemo(
+    () => persons.find((person) => person.id === focusedPersonId) ?? null,
+    [focusedPersonId, persons],
+  );
+  const deferredFocusedName = useDeferredValue(focusedPerson?.name ?? "");
+  const matchingKnownClients = useMemo(() => {
+    const normalizedQuery = deferredFocusedName.trim().toLowerCase();
+    if (!focusedPersonId || normalizedQuery.length < 2) {
+      return [];
+    }
+
+    return knownClients
+      .filter((client) => client.name.toLowerCase().includes(normalizedQuery))
+      .slice(0, 8);
+  }, [deferredFocusedName, focusedPersonId, knownClients]);
+
+  const preparedPreviewPersons = useMemo<PreviewPerson[]>(
+    () =>
+      previewPersons.map((person) => ({
+        ...person,
+        safePhoto: getSafeImageUrl(person.photo),
+        safeThumb: getSafeImageUrl(person.thumb),
+      })),
+    [previewPersons],
+  );
+  const previewChunks = useMemo(() => buildPreviewChunks(preparedPreviewPersons), [preparedPreviewPersons]);
+  const totalPreviewPages = previewChunks.length;
+  const previewDocumentPageCount = previewBasePdfPageCount + totalPreviewPages;
+
   const handleAutoFetch = async (queryParam: string) => {
     setFetchQuery(queryParam);
     // Firebase IDs are usually 20 characters long
@@ -375,14 +579,6 @@ export function GiftDeedEditor() {
         setIsFetching(false);
       }
     }
-  };
-
-  const getSafeImageUrl = (url?: string) => {
-    if (!url) return '';
-    // If it's already a base64 encoded local capture or safe source, pass through
-    if (url.startsWith('data:image')) return url;
-    // Otherwise use public proxy for html2canvas bypass on cross-origin storage
-    return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
   };
 
   const handleKNoChange = (newKNo: string) => {
@@ -496,6 +692,10 @@ export function GiftDeedEditor() {
     let basePdfPageCount = 0;
     let basePdfBytes: ArrayBuffer | null = null;
     let docA: any = null;
+    const [{ pdf }, { default: NotaryPdfTemplate }] = await Promise.all([
+      import("@react-pdf/renderer"),
+      import("../components/NotaryPdfTemplate"),
+    ]);
 
     const PDFLib = (window as any).PDFLib;
     if (!PDFLib) throw new Error("PDF Library missing.");
@@ -674,44 +874,20 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
           </button>
         </div>
 
-        <div className="flex flex-col xl:flex-row gap-6 p-4 md:p-8 justify-center items-start print:block print:p-0">
+        <div className="flex flex-col xl:flex-row gap-4 p-3 md:p-4 2xl:gap-6 2xl:p-6 justify-center items-start print:block print:p-0">
 
-          <div className={`w-full xl:max-w-[700px] bg-surface-container-lowest p-6 rounded-xl editorial-shadow no-print border border-outline-variant/15 font-body shrink-0 ${showPreviewMobile ? 'hidden xl:block' : 'block'}`}>
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+          <div className={`w-full xl:w-[23rem] 2xl:w-[31rem] bg-surface-container-lowest p-4 rounded-xl editorial-shadow no-print border border-outline-variant/15 font-body shrink-0 ${showPreviewMobile ? 'hidden xl:block' : 'block'}`}>
+            <div className="mb-4">
               <div className="flex flex-col">
-                <h2 className="font-headline text-3xl font-bold text-on-surface">Data Entry</h2>
-                <p className="text-on-surface-variant font-body text-sm mt-1">Configure all document variables below. Changes auto-sync to the print preview.</p>
-              </div>
-              <div className="w-full md:w-auto flex flex-col sm:flex-row sm:flex-wrap gap-3">
-                <button onClick={handleAutoGenerateAndUploadPdf} disabled={isUploadingPdf} className={`w-full sm:w-auto justify-center flex items-center gap-2 px-5 py-3 rounded-xl font-body font-bold shadow-sm transition-all text-sm uppercase tracking-wider whitespace-nowrap ${isUploadingPdf ? 'bg-surface-variant text-on-surface-variant opacity-70 cursor-not-allowed' : 'bg-tertiary-container text-on-tertiary-container hover:opacity-90 active:scale-95'}`}>
-                  {isUploadingPdf ? <Loader2 size={18} className="animate-spin" /> : <UploadCloud size={18} />}
-                  {isUploadingPdf ? "Generating..." : "Generate & Upload PDF"}
-                </button>
-                {pdfUrl && (
-                  <>
-                    <button onClick={() => window.open(pdfUrl, '_blank')} className="w-full sm:w-auto justify-center flex items-center gap-2 bg-green-100 text-green-800 px-5 py-3 rounded-xl font-body font-bold shadow-sm hover:opacity-90 transition-all text-sm uppercase tracking-wider whitespace-nowrap">
-                      <FileText size={18} /> View PDF
-                    </button>
-                    <button onClick={handleSendMail} className="w-full sm:w-auto justify-center flex items-center gap-2 bg-blue-100 text-blue-800 px-5 py-3 rounded-xl font-body font-bold shadow-sm hover:opacity-90 transition-all text-sm uppercase tracking-wider whitespace-nowrap">
-                      <Mail size={18} /> Send via Gmail
-                    </button>
-                  </>
-                )}
-
-                <button
-                  onClick={handlePrint}
-                  className="w-full sm:w-auto justify-center flex items-center gap-2 bg-primary text-on-primary px-6 py-3 rounded-xl font-body font-bold shadow-[0_4px_20px_-4px_rgba(0,99,156,0.4)] hover:opacity-90 active:scale-95 transition-all text-sm uppercase tracking-wider whitespace-nowrap"
-                >
-                  <Printer size={18} />
-                  Print Document
-                </button>
+                <h2 className="font-headline text-2xl font-bold text-on-surface">Data Entry</h2>
+                <p className="text-on-surface-variant font-body text-xs mt-1">Configure document variables. Changes auto-sync to the print preview.</p>
               </div>
             </div>
 
             <div className="relative w-full">
               <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant focus-within:text-primary transition-colors" />
               <input
-                className="w-full bg-surface-container-highest focus:bg-surface-container-lowest text-on-surface placeholder:text-on-surface-variant/70 rounded-lg py-3 pl-12 pr-12 border border-outline-variant/15 focus:ring-2 focus:ring-primary/30 transition-all font-body text-sm"
+                className="w-full bg-surface-container-highest focus:bg-surface-container-lowest text-on-surface placeholder:text-on-surface-variant/70 rounded-lg py-2.5 pl-12 pr-12 border border-outline-variant/15 focus:ring-2 focus:ring-primary/30 transition-all font-body text-sm"
                 placeholder="Enter Document ID to auto-fetch from cloud..."
                 value={fetchQuery}
                 onChange={(e) => handleAutoFetch(e.target.value)}
@@ -719,12 +895,12 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
               />
               {isFetching && <Loader2 size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-primary animate-spin" />}
             </div>
-            <div className="mt-4 p-4 border border-dashed border-outline-variant/40 rounded-xl bg-surface-container-lowest/50 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="mt-3 p-3 border border-dashed border-outline-variant/40 rounded-xl bg-surface-container-lowest/50 flex flex-col md:flex-row items-center justify-between gap-3">
               <div className="flex flex-col">
                 <span className="text-sm font-bold text-on-surface">Original Document (Optional)</span>
                 <span className="text-xs text-on-surface-variant font-body">Upload the original Gift Deed PDF. The Notary page will be appended to the END.</span>
               </div>
-              <label className="flex items-center gap-2 bg-secondary-container text-on-secondary-container px-4 py-2 rounded-lg font-body font-medium hover:opacity-90 active:scale-95 transition-all text-sm shadow-sm cursor-pointer whitespace-nowrap">
+              <label className="flex items-center gap-2 bg-secondary-container text-on-secondary-container px-3 py-2 rounded-lg font-body font-medium hover:opacity-90 active:scale-95 transition-all text-sm shadow-sm cursor-pointer whitespace-nowrap">
                 <FileText size={16} />
                 {basePdfFile ? 'Change Original PDF' : 'Attach Main PDF'}
                 <input
@@ -739,62 +915,62 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
                 />
               </label>
               {basePdfFile && (
-                <div className="flex items-center gap-2 bg-green-100 text-green-800 px-3 py-1.5 rounded-lg text-xs font-bold">
+                <div className="flex items-center gap-2 bg-secondary-container/40 text-on-surface px-3 py-1.5 rounded-lg text-xs font-bold">
                   Attached: {basePdfFile.name}
-                  <button onClick={() => setBasePdfFile(null)} className="ml-2 hover:text-red-600"><X size={14} /></button>
+                  <button onClick={() => setBasePdfFile(null)} className="ml-2 hover:text-destructive transition-colors"><X size={14} /></button>
                 </div>
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-4 mb-6">
               <div>
                 <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Sr No</label>
-                <input type="text" value={srNo} onChange={(e) => setSrNo(e.target.value)} className="w-full p-3 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. 2024/01" />
+                <input type="text" value={srNo} onChange={(e) => setSrNo(e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. 2024/01" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Register No</label>
-                <input type="text" value={kNo} onChange={(e) => handleKNoChange(e.target.value)} className="w-full p-3 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. 123" />
+                <input type="text" value={kNo} onChange={(e) => handleKNoChange(e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. 123" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Reg.Page No</label>
-                <input type="text" value={pageNo} onChange={(e) => setPageNo(e.target.value)} className="w-full p-3 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. 12" />
+                <input type="text" value={pageNo} onChange={(e) => setPageNo(e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. 12" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Document Name</label>
-                <input type="text" value={docName} onChange={(e) => setDocName(e.target.value)} className="w-full p-3 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. Gift Deed" />
+                <input type="text" value={docName} onChange={(e) => setDocName(e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. Gift Deed" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Document Purpose</label>
-                <input type="text" value={docPurpose} onChange={(e) => setDocPurpose(e.target.value)} className="w-full p-3 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. Flat Purpose" />
+                <input type="text" value={docPurpose} onChange={(e) => setDocPurpose(e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. Flat Purpose" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Document Date</label>
-                <input type="text" value={docDate} onChange={(e) => setDocDate(e.target.value)} className="w-full p-3 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="DD MMMM YYYY" />
+                <input type="text" value={docDate} onChange={(e) => setDocDate(e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="DD MMMM YYYY" />
               </div>
             </div>
 
-            <div className="flex justify-between items-center mb-6 pt-6 border-t border-outline-variant/15">
+            <div className="flex flex-col 2xl:flex-row 2xl:justify-between 2xl:items-center gap-3 mb-5 pt-5 border-t border-outline-variant/15">
               <div>
                 <h3 className="font-headline text-xl font-bold text-on-surface">Parties Involved</h3>
                 <p className="text-xs text-on-surface-variant mt-1">Either Aadhar Card or PAN Card is required for each party.</p>
               </div>
-              <button onClick={addPerson} className="flex items-center gap-2 bg-secondary-container text-on-secondary-container px-4 py-2.5 rounded-xl font-body font-medium hover:opacity-90 active:scale-95 transition-all text-sm shadow-sm">
+              <button onClick={addPerson} className="flex w-full 2xl:w-auto items-center justify-center gap-2 bg-secondary-container text-on-secondary-container px-4 py-2.5 rounded-xl font-body font-medium hover:opacity-90 active:scale-95 transition-all text-sm shadow-sm">
                 <Plus size={16} /> Add Person
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               {persons.map((person, index) => (
-                <div key={person.id} className="p-5 border border-outline-variant/30 rounded-xl bg-surface-container-lowest/50 relative shadow-sm">
+                <div key={person.id} className="p-4 border border-outline-variant/30 rounded-xl bg-surface-container-lowest/50 relative shadow-sm">
                   <div className="absolute -left-2 -top-2 w-6 h-6 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-xs shadow-md">{index + 1}</div>
                   {persons.length > 1 && (
                     <button onClick={() => deletePerson(person.id)} className="absolute -right-2 -top-2 w-6 h-6 rounded-full bg-error text-on-error flex items-center justify-center hover:bg-error/80 shadow-md transition-colors" title="Remove person">
                       <X size={14} />
                     </button>
                   )}
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-x-6 gap-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-12 gap-x-4 gap-y-3">
                     <div
-                      className="md:col-span-4 relative"
+                      className="2xl:col-span-4 relative"
                       onBlur={(e) => {
                         if (!e.currentTarget.contains(e.relatedTarget as Node)) {
                           setFocusedPersonId(null);
@@ -813,8 +989,8 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
 
                       {focusedPersonId === person.id && person.name.trim().length >= 2 && (
                         <ul className="absolute top-full mt-2 w-full bg-surface-container-lowest text-on-surface border border-outline-variant/30 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] max-h-64 overflow-y-auto z-50">
-                          {knownClients.filter(kc => kc.name.toLowerCase().includes(person.name.toLowerCase())).map((match, idx) => (
-                            <li key={idx}>
+                          {matchingKnownClients.map((match) => (
+                            <li key={match.id}>
                               <button
                                 type="button"
                                 // Use onMouseDown to pre-emptively fire before the input's strictly bound onBlur completely kills the dropdown DOM node!
@@ -829,38 +1005,38 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
                               </button>
                             </li>
                           ))}
-                          {knownClients.filter(kc => kc.name.toLowerCase().includes(person.name.toLowerCase())).length === 0 && (
+                          {matchingKnownClients.length === 0 && (
                             <li className="px-4 py-3 text-xs text-on-surface-variant text-center font-body">No historical clients found.</li>
                           )}
                         </ul>
                       )}
                     </div>
-                    <div className="md:col-span-2">
+                    <div className="2xl:col-span-2">
                       <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Age</label>
                       <input type="text" value={person.age} onChange={(e) => updatePerson(person.id, 'age', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="Age" />
                     </div>
-                    <div className="md:col-span-3">
+                    <div className="2xl:col-span-3">
                       <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Aadhar Card *</label>
                       <input type="text" value={person.aadhar} onChange={(e) => updatePerson(person.id, 'aadhar', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="XXXX-XXXX-XXXX" />
                     </div>
-                    <div className="md:col-span-3">
+                    <div className="2xl:col-span-3">
                       <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">PAN Card *</label>
                       <input type="text" value={person.pan || ''} onChange={(e) => updatePerson(person.id, 'pan', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="ABCDE1234F" />
                     </div>
-                    <div className="md:col-span-12">
+                    <div className="md:col-span-2 2xl:col-span-12">
                       <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Residential Address</label>
                       <input type="text" value={person.addr} onChange={(e) => updatePerson(person.id, 'addr', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="Complete address..." />
                     </div>
-                    <div className="md:col-span-6">
+                    <div className="2xl:col-span-6">
                       <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Phone (Optional)</label>
                       <input type="text" value={person.phone || ''} onChange={(e) => updatePerson(person.id, 'phone', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="+91 XXXXX XXXXX" />
                     </div>
-                    <div className="md:col-span-6">
+                    <div className="2xl:col-span-6">
                       <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Email (Optional)</label>
                       <input type="email" value={person.email || ''} onChange={(e) => updatePerson(person.id, 'email', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="client@example.com" />
                     </div>
 
-                    <div className="md:col-span-12 mt-1 pt-4 border-t border-outline-variant/20 flex flex-wrap gap-4 items-center">
+                    <div className="md:col-span-2 2xl:col-span-12 mt-1 pt-3 border-t border-outline-variant/20 flex flex-wrap gap-2 items-center">
                       <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mr-2">Biometrics:</span>
                       <div className="flex gap-2 items-center">
                         <button onClick={() => setActiveCapture({ personId: person.id, type: 'photo' })} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors font-medium text-xs">
@@ -884,136 +1060,74 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
                 </div>
               ))}
             </div>
+
+            <div className="mt-8 border-t border-outline-variant/15 pt-6">
+              <div className="mb-4">
+                <h3 className="font-headline text-lg font-bold text-on-surface">Document Actions</h3>
+                <p className="mt-1 text-xs font-body text-on-surface-variant">Finish the form, then generate, print, or share the final document.</p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
+                <button
+                  onClick={handleAutoGenerateAndUploadPdf}
+                  disabled={isUploadingPdf}
+                  className={`w-full sm:w-auto justify-center flex items-center gap-2 rounded-xl border px-4 py-2.5 font-body text-xs font-bold uppercase tracking-[0.16em] shadow-sm transition-all whitespace-nowrap ${
+                    isUploadingPdf
+                      ? 'border-outline-variant/20 bg-surface-variant text-on-surface-variant opacity-70 cursor-not-allowed'
+                      : 'border-transparent bg-tertiary-container text-on-tertiary-container hover:opacity-90 active:scale-[0.98]'
+                  }`}
+                >
+                  {isUploadingPdf ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
+                  {isUploadingPdf ? "Generating..." : "Generate & Upload PDF"}
+                </button>
+
+                <button
+                  onClick={handlePrint}
+                  className="w-full sm:w-auto justify-center flex items-center gap-2 rounded-xl border border-primary/10 bg-primary text-on-primary px-4 py-2.5 font-body text-xs font-bold uppercase tracking-[0.16em] shadow-[0_12px_28px_-20px_rgba(10,10,10,0.55)] transition-all whitespace-nowrap hover:opacity-90 active:scale-[0.98]"
+                >
+                  <Printer size={16} />
+                  Print Document
+                </button>
+
+                {pdfUrl && (
+                  <>
+                    <button
+                      onClick={() => window.open(pdfUrl, '_blank')}
+                      className="w-full sm:w-auto justify-center flex items-center gap-2 rounded-xl border border-outline-variant/25 bg-surface-container-high text-on-surface px-4 py-2.5 font-body text-xs font-bold uppercase tracking-[0.16em] shadow-sm transition-all whitespace-nowrap hover:bg-surface-container"
+                    >
+                      <FileText size={16} />
+                      View PDF
+                    </button>
+                    <button
+                      onClick={handleSendMail}
+                      className="w-full sm:w-auto justify-center flex items-center gap-2 rounded-xl border border-secondary-container/50 bg-secondary-container text-on-secondary-container px-4 py-2.5 font-body text-xs font-bold uppercase tracking-[0.16em] shadow-sm transition-all whitespace-nowrap hover:opacity-90 active:scale-[0.98]"
+                    >
+                      <Mail size={16} />
+                      Send via Gmail
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div id="document-to-print" className={`w-full xl:sticky xl:top-8 flex-1 flex flex-col items-center print:static print:block print:w-[210mm] print:m-0 print:p-0 ${showPreviewMobile ? 'flex' : 'hidden xl:flex'}`} style={{ color: '#000000' }}>
-            {(() => {
-              const chunks = [];
-              const intermediateLimit = persons.filter(p => p.email && p.phone).length > 3 ? 3 : 4;
-
-              if (persons.length === 3) {
-                chunks.push(persons.slice(0, 2));
-                chunks.push(persons.slice(2, 3));
-              } else if (persons.length > 0) {
-                chunks.push(persons.slice(0, 3));
-                let i = 3;
-                while (i < persons.length) {
-                  let remaining = persons.length - i;
-                  if (remaining <= 3) {
-                    chunks.push(persons.slice(i, i + remaining));
-                    i += remaining;
-                  } else if (remaining === 4 && intermediateLimit === 4) {
-                    chunks.push(persons.slice(i, i + 3));
-                    i += 3;
-                  } else {
-                    chunks.push(persons.slice(i, i + intermediateLimit));
-                    i += intermediateLimit;
-                  }
-                }
-              } else {
-                chunks.push([]);
-              }
-              return chunks.map((chunk, pageIndex) => {
-                const isLastPage = pageIndex === chunks.length - 1;
-
-                return (
-                  <div key={pageIndex} className="mobile-preview-wrapper no-print md:print:block">
-                    <article
-                      className="mobile-preview-content relative flex flex-col p-[15mm] box-border print:shadow-none print:w-[210mm] print:max-w-none print:p-[15mm] print:m-0 html2pdf__page-break"
-                      style={{ color: '#000000', backgroundColor: '#ffffff', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', fontFamily: '"Times New Roman", serif', pageBreakAfter: isLastPage ? 'auto' : 'always' }}
-                    >
-
-
-                    <img src="/2.png" alt="watermark" className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[60%] opacity-5 pointer-events-none z-0" />
-
-                    {pageIndex === 0 && (
-                      <>
-                        <div className="flex justify-between items-center text-center gap-2 sm:gap-4">
-                          <img src="/1.png" alt="Logo 1" className="h-14 w-14 sm:h-20 sm:w-20 md:h-24 md:w-24 shrink-0" />
-                          <div className="flex-1 px-1 min-w-0">
-                            <div className="inline-block">
-                              <h2 className="font-bold text-base sm:text-xl md:text-2xl m-0">Mr. Sameer Shrikant Vispute</h2>
-                              <small className="block text-right">BLS., LLB., DIPL</small>
-                              <h4 className="font-bold text-base sm:text-lg md:text-xl m-0">Advocate High Court</h4>
-                            </div>
-                            <div className="font-black text-sm sm:text-base md:text-[1.1rem] leading-tight my-1.5 uppercase tracking-wide" style={{ color: '#b30000' }}>
-                              Notary  (Govt. of India) <br />Reg. No. 57704
-                            </div>
-                            <small className="break-words">Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.com</small>
-                            <br />
-                            <small className="block text-[11px] sm:text-[12px] tracking-tight break-words">Shree Bhagwati Krupa, Pendse Nagar, Lane No 2, Dombivli (E), Dist. Thane - 421201.</small>
-                            <small className="block text-[11px] sm:text-[12px] tracking-tight break-words">A002 Om Residency, Khambalpada, Off 90 Feet Road, Thakurli, Dombivli (E), Dist. Thane - 421201</small>
-                          </div>
-                          <img src="/3.png" alt="Logo 2" className="h-14 w-14 sm:h-20 sm:w-20 md:h-24 md:w-24 shrink-0" />
-                        </div>
-
-                        <div className="flex justify-between mt-4">
-                          <div>Sr No: <span className="font-bold print:font-normal">{srNo}</span></div>
-                          <div>Date: <span className="font-bold print:font-normal">{docDate}</span></div>
-                        </div>
-                        <div>Register No - <span className="font-bold print:font-normal">{kNo}</span></div>
-                        <div>Reg.Page No - <span className="font-bold print:font-normal">{pageNo}</span></div>
-
-                        <hr style={{ margin: "10px 0", borderTop: "1px solid black", borderBottom: 'none', borderLeft: 'none', borderRight: 'none' }} />
-                      </>
-                    )}
-
-                    <div className="flex-grow">
-                      {chunk.map((person, index) => (
-                        <div key={person.id}>
-                          <div className="mt-[10px] flex justify-between">
-                            <div className="flex-1 pr-4">
-                              <p style={{ lineHeight: 1.3, margin: 0, marginBottom: '16px' }}>
-                                I Mr <span className="font-bold print:font-normal">{person.name}</span> aged <span className="font-bold print:font-normal ml-1">{person.age}</span> yrs.<br />
-                                Residing at <span className="font-bold print:font-normal">{person.addr}</span><br />
-                                {person.aadhar && <>Aadhar Card No: <span className="font-bold print:font-normal">{person.aadhar}</span></>}
-                                {person.aadhar && person.pan && <span className="mx-2">|</span>}
-                                {person.pan && <>PAN Card No: <span className="font-bold print:font-normal">{person.pan}</span></>}
-                                {person.phone && <><br />Phone: <span className="font-bold print:font-normal">{person.phone}</span></>}
-                                {person.email && <><br />Email: <span className="font-bold print:font-normal">{person.email}</span></>}
-                              </p>
-
-                              <div className="mt-4 flex flex-col items-start">
-                                <div className="w-[120px] h-[80px] border relative flex items-center justify-center overflow-hidden" style={{ borderColor: '#000000', backgroundColor: '#f9fafb' }}>
-                                  {person.thumb && <img src={getSafeImageUrl(person.thumb)} crossOrigin="anonymous" className="w-full h-full object-contain p-1" alt="Thumbprint" />}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="flex flex-col items-center pl-4 shrink-0">
-                              <div className="w-[120px] h-[120px] border relative flex items-center justify-center overflow-hidden" style={{ borderColor: '#000000', backgroundColor: '#f9fafb' }}>
-                                {person.photo && <img src={getSafeImageUrl(person.photo)} crossOrigin="anonymous" className="w-full h-full object-cover" alt="Captured" />}
-                              </div>
-
-                              <div className="w-[150px] border-t text-center mt-[50px] font-bold" style={{ borderColor: '#000000' }}>Signature</div>
-                            </div>
-                          </div>
-                          <hr style={{ margin: "8px 0", borderTop: "1px solid black", borderBottom: 'none', borderLeft: 'none', borderRight: 'none' }} />
-                        </div>
-                      ))}
-
-                      {isLastPage && (
-                        <>
-                          <p style={{ marginTop: '16px', lineHeight: '1.5' }}>
-                            That I/we have executed the annexed {docName || 'Gift Deed'} dated <span className="font-bold print:font-normal">{docDate || '26th April 2026'}</span>, pertaining to the {docPurpose || '___'} purposes.<br />
-                            I/we state that I/we have signed and given left hand digital thumb in the said document beside our respective photographs appearing here in above, and that the said {docName || 'Gift Deed'} consists of {basePdfPageCount + chunks.length} pages.
-                          </p>
-                          <hr style={{ margin: "8px 0", borderTop: "1px solid black", borderBottom: 'none', borderLeft: 'none', borderRight: 'none' }} />
-                        </>
-                      )}
-                    </div>
-
-
-
-                    <div className="absolute bottom-[30px] left-0 right-0 text-center text-xs" style={{ color: 'rgba(0,0,0,0.7)' }}>
-                      Page {pageIndex + 1} of {chunks.length}
-                    </div>
-                  </article>
-                </div>
-
-                );
-              });
-            })()}
+          <div id="document-to-print" className={`w-full xl:sticky xl:top-4 xl:w-[210mm] xl:min-w-[210mm] xl:flex-none flex flex-col items-center print:static print:block print:w-[210mm] print:m-0 print:p-0 ${showPreviewMobile ? 'flex' : 'hidden xl:flex'}`} style={{ color: '#000000' }}>
+            {previewChunks.map((chunk, pageIndex) => (
+              <PreviewPage
+                key={pageIndex}
+                chunk={chunk}
+                pageIndex={pageIndex}
+                totalPages={totalPreviewPages}
+                isLastPage={pageIndex === totalPreviewPages - 1}
+                totalDocumentPages={previewDocumentPageCount}
+                srNo={previewSrNo}
+                docDate={previewDocDate}
+                kNo={previewKNo}
+                pageNo={previewPageNo}
+                docName={previewDocName}
+                docPurpose={previewDocPurpose}
+              />
+            ))}
           </div>
         </div>
       </main>

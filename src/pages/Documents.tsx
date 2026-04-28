@@ -3,9 +3,9 @@ import { Search, ChevronDown, Calendar, Plus, ChevronLeft, ChevronRight, FileTex
 
 
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
-import { db } from "../firebase";
+import { db } from "../firebaseDb";
 
 export function Documents() {
   const [documents, setDocuments] = useState<any[]>([]);
@@ -17,6 +17,7 @@ export function Documents() {
   const [dateSort, setDateSort] = useState("newest");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   useEffect(() => {
     const fetchDocs = async () => {
@@ -62,48 +63,53 @@ export function Documents() {
     fetchDocs();
   }, []);
 
-  const uniqueRegNumbers = Array.from(new Set(documents.map(d => d.kNo).filter(k => k && k !== "-"))).sort();
+  const uniqueRegNumbers = useMemo(
+    () => Array.from(new Set(documents.map((d) => d.kNo).filter((k) => k && k !== "-"))).sort(),
+    [documents],
+  );
 
-  const filteredDocuments = documents.filter(doc => {
-     // Search filter
-     const safeSearch = String(searchQuery).toLowerCase();
-     const matchesSearch = safeSearch === "" || 
-         String(doc.id || "").toLowerCase().includes(safeSearch) || 
-         String(doc.clientName || "").toLowerCase().includes(safeSearch) || 
-         String(doc.srNo || "").toLowerCase().includes(safeSearch) ||
-         String(doc.kNo || "").toLowerCase().includes(safeSearch) ||
-         String(doc.pageNo || "").toLowerCase().includes(safeSearch) ||
-         String(doc.type || "").toLowerCase().includes(safeSearch);
-     
-     // Reg Number specific filter
-     const matchesRegNumberFilter = regNumberFilter === "" || String(doc.kNo) === regNumberFilter;
-     
-     // Status filter
-     const matchesStatus = statusFilter === "" || String(doc.status).toLowerCase() === statusFilter.toLowerCase();
+  const filteredDocuments = useMemo(() => {
+    const safeSearch = String(deferredSearchQuery).trim().toLowerCase();
 
-     // Date range filter
-     let matchesDate = true;
-     if (startDate || endDate) {
-        if (doc.timestamp) {
-           const docTime = new Date(doc.timestamp).setHours(0,0,0,0);
-           if (startDate) {
-              const sTime = new Date(startDate).setHours(0,0,0,0);
+    return documents
+      .filter((doc) => {
+        const matchesSearch =
+          safeSearch === "" ||
+          String(doc.id || "").toLowerCase().includes(safeSearch) ||
+          String(doc.clientName || "").toLowerCase().includes(safeSearch) ||
+          String(doc.srNo || "").toLowerCase().includes(safeSearch) ||
+          String(doc.kNo || "").toLowerCase().includes(safeSearch) ||
+          String(doc.pageNo || "").toLowerCase().includes(safeSearch) ||
+          String(doc.type || "").toLowerCase().includes(safeSearch);
+
+        const matchesRegNumberFilter = regNumberFilter === "" || String(doc.kNo) === regNumberFilter;
+        const matchesStatus = statusFilter === "" || String(doc.status).toLowerCase() === statusFilter.toLowerCase();
+
+        let matchesDate = true;
+        if (startDate || endDate) {
+          if (doc.timestamp) {
+            const docTime = new Date(doc.timestamp).setHours(0, 0, 0, 0);
+            if (startDate) {
+              const sTime = new Date(startDate).setHours(0, 0, 0, 0);
               if (docTime < sTime) matchesDate = false;
-           }
-           if (endDate) {
-              const eTime = new Date(endDate).setHours(23,59,59,999);
+            }
+            if (endDate) {
+              const eTime = new Date(endDate).setHours(23, 59, 59, 999);
               if (docTime > eTime) matchesDate = false;
-           }
-        } else {
-           matchesDate = false; // If searching for dates but doc has no date, filter out.
+            }
+          } else {
+            matchesDate = false;
+          }
         }
-     }
-     return matchesSearch && matchesRegNumberFilter && matchesStatus && matchesDate;
-  }).sort((a, b) => {
-     if (dateSort === "newest") return b.timestamp - a.timestamp;
-     if (dateSort === "oldest") return a.timestamp - b.timestamp;
-     return 0;
-  });
+
+        return matchesSearch && matchesRegNumberFilter && matchesStatus && matchesDate;
+      })
+      .sort((a, b) => {
+        if (dateSort === "newest") return b.timestamp - a.timestamp;
+        if (dateSort === "oldest") return a.timestamp - b.timestamp;
+        return 0;
+      });
+  }, [dateSort, deferredSearchQuery, documents, endDate, regNumberFilter, startDate, statusFilter]);
 
   return (
     <Layout>
@@ -117,7 +123,7 @@ export function Documents() {
               <h1 className="font-headline text-4xl md:text-5xl font-bold text-on-surface tracking-tight">Document Archive</h1>
               <p className="font-body text-on-surface-variant text-base md:text-lg max-w-2xl">A comprehensive ledger of all notarized instruments, drafts, and pending executions.</p>
             </div>
-            <Link to="/documents/new" className="flex items-center gap-2 gradient-primary text-on-primary px-6 py-3 rounded-xl font-medium shadow-[0_4px_20px_-4px_rgba(0,99,156,0.3)] hover:opacity-90 transition-opacity whitespace-nowrap">
+            <Link to="/documents/new" className="flex items-center gap-2 gradient-primary text-on-primary px-6 py-3 rounded-xl font-medium shadow-[0_16px_32px_-22px_rgba(10,10,10,0.45)] hover:opacity-90 transition-opacity whitespace-nowrap">
               <Plus size={18} />
               +New Document
             </Link>
@@ -193,7 +199,7 @@ export function Documents() {
                  </div>
               ) : (
                 filteredDocuments.map((doc, i) => (
-                  <div key={doc.id} className={`grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-4 px-6 py-5 hover:bg-surface-bright transition-colors group items-center border-t border-outline-variant/15 md:border-none relative ${i % 2 !== 0 ? 'bg-surface-container-low/30' : ''}`}>
+                  <div key={doc.id} className={`content-auto grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-4 px-6 py-5 hover:bg-surface-bright transition-colors group items-center border-t border-outline-variant/15 md:border-none relative ${i % 2 !== 0 ? 'bg-surface-container-low/30' : ''}`}>
                     <div className="hidden md:block absolute bottom-0 left-6 right-6 h-[1px] bg-surface-container-low group-last:hidden"></div>
                     
                     <div className="col-span-1 md:col-span-2 flex flex-col md:block">
@@ -235,7 +241,7 @@ export function Documents() {
                       
                       {doc.pdfUrl && (
                         <>
-                          <button onClick={() => window.open(doc.pdfUrl, '_blank')} className="flex items-center gap-1.5 bg-green-100 hover:bg-green-200 text-green-800 px-3 py-1.5 rounded-full font-label text-xs uppercase tracking-wider transition-colors">
+                          <button onClick={() => window.open(doc.pdfUrl, '_blank')} className="flex items-center gap-1.5 bg-surface-container-high hover:bg-surface-container text-on-surface px-3 py-1.5 rounded-full font-label text-xs uppercase tracking-wider transition-colors">
                             <FileText size={14} /> View
                           </button>
                           <button 
@@ -261,7 +267,7 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
                               const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&su=${subject}&body=${body}`;
                               window.open(gmailUrl, '_blank');
                             }} 
-                            className="flex items-center gap-1.5 bg-blue-100 hover:bg-blue-200 text-blue-800 px-3 py-1.5 rounded-full font-label text-xs uppercase tracking-wider transition-colors"
+                            className="flex items-center gap-1.5 bg-secondary-container hover:opacity-90 text-on-secondary-container px-3 py-1.5 rounded-full font-label text-xs uppercase tracking-wider transition-colors"
                           >
                             <Mail size={14} /> Mail
                           </button>

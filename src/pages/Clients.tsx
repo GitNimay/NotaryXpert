@@ -1,8 +1,8 @@
 import { Layout } from "../components/layout/Layout";
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
-import { db } from "../firebase";
+import { db } from "../firebaseDb";
 import { Loader2, Fingerprint, MapPin, Search, Copy, Check, FileText, Phone, Mail } from "lucide-react";
 
 interface ParsedClient {
@@ -22,6 +22,7 @@ export function Clients() {
   const [clients, setClients] = useState<ParsedClient[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   useEffect(() => {
     const fetchClients = async () => {
@@ -83,10 +84,18 @@ export function Clients() {
       setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const filteredClients = clients.filter(c => 
-     c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-     c.aadhar.includes(searchQuery)
-  );
+  const filteredClients = useMemo(() => {
+    const normalizedQuery = deferredSearchQuery.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return clients;
+    }
+
+    return clients.filter(
+      (client) =>
+        client.name.toLowerCase().includes(normalizedQuery) ||
+        client.aadhar.toLowerCase().includes(normalizedQuery),
+    );
+  }, [clients, deferredSearchQuery]);
 
   return (
     <Layout>
@@ -130,12 +139,12 @@ export function Clients() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                {filteredClients.map((client, idx) => (
-                  <div key={idx} className="bg-surface-container-lowest rounded-2xl border border-outline-variant/15 p-6 hover:shadow-lg transition-shadow duration-300 flex flex-col gap-5 editorial-shadow">
+                  <div key={idx} className="content-auto bg-surface-container-lowest rounded-2xl border border-outline-variant/15 p-6 hover:shadow-lg transition-shadow duration-300 flex flex-col gap-5 editorial-shadow">
                      
                      <div className="flex items-center gap-5">
                         <div className="w-16 h-16 rounded-full bg-surface-container-high border-2 border-primary/10 overflow-hidden flex-shrink-0 flex items-center justify-center text-primary font-bold text-xl relative">
                            {client.photoUrl ? (
-                              <img src={client.photoUrl} alt={client.name} className="w-full h-full object-cover" />
+                              <img src={client.photoUrl} alt={client.name} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                            ) : (
                               client.name.charAt(0).toUpperCase()
                            )}
@@ -151,7 +160,7 @@ export function Clients() {
                            <Fingerprint size={16} className="text-primary mt-0.5 flex-shrink-0" />
                            <div className="flex-1 font-body text-sm text-on-surface truncate break-all">{client.aadhar}</div>
                            <button onClick={() => handleCopy(client.aadhar, `a-${idx}`)} className="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" title="Copy Aadhar">
-                              {copiedId === `a-${idx}` ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
+                              {copiedId === `a-${idx}` ? <Check size={16} className="text-chart-3" /> : <Copy size={16} />}
                            </button>
                         </div>
                         

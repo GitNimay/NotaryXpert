@@ -2,7 +2,7 @@ import { Layout } from "../components/layout/Layout";
 import { User, Info } from "lucide-react";
 
 import { useState, useEffect } from "react";
-import { db } from "../firebase";
+import { db } from "../firebaseDb";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export function Settings() {

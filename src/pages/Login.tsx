@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../firebase';
-import { Gavel, Loader2, Lock } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { auth } from '../firebaseAuth';
+import { APP_NAME, BrandMark } from '../components/BrandLockup';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -32,85 +33,63 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
-      {/* Decorative background blur */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-primary/20 blur-[120px] rounded-full pointer-events-none -z-10"></div>
-      
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center text-primary mb-6">
-          <Gavel size={64} className="drop-shadow-[0_0_15px_rgba(0,99,156,0.5)]" />
+    <div className="flex min-h-dvh items-center justify-center bg-surface-container px-4 py-6 sm:px-6">
+      <div className="w-full max-w-[528px] rounded-lg border border-outline-variant/70 bg-surface-container-lowest px-8 py-12 shadow-[0_16px_48px_-32px_rgb(10_10_10_/_0.7)] sm:px-10 sm:py-16">
+        <div className="mb-10 flex items-center justify-center gap-3 text-center">
+          <BrandMark className="h-12 w-12 rounded-none bg-transparent ring-0 shadow-none" />
+          <h1 className="font-body text-2xl font-bold text-on-surface sm:text-3xl">
+            {APP_NAME}
+          </h1>
         </div>
-        <h2 className="mt-6 text-center font-headline text-4xl font-bold text-on-surface tracking-tight">
-          NotaryXpert Access
-        </h2>
-        <p className="mt-2 text-center font-body text-sm text-on-surface-variant max-w">
-          Enter your authorized credentials to access the secure portal.
-        </p>
-      </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
-        <div className="bg-surface-container-lowest py-8 px-4 shadow-2xl sm:rounded-2xl sm:px-10 border border-outline-variant/15 editorial-shadow relative overflow-hidden">
-          
-          <form className="space-y-6" onSubmit={handleLogin}>
-            <div>
-              <label className="block text-sm font-label font-bold text-on-surface-variant uppercase tracking-wider mb-2">
-                Email Address
-              </label>
-              <div className="mt-1">
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-surface-container-highest border border-outline-variant/20 focus:border-primary/50 focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 rounded-lg font-body text-on-surface px-4 py-3 transition-all outline-none"
-                  placeholder="admin@notaryxpert.local"
-                />
-              </div>
+        <form className="space-y-5" onSubmit={handleLogin}>
+          <div>
+            <label className="sr-only" htmlFor="login-email">
+              Email
+            </label>
+            <input
+              id="login-email"
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="h-14 w-full rounded-lg border border-outline-variant bg-surface px-4 font-body text-base text-on-surface outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+              placeholder="Enter your secure email"
+            />
+          </div>
+
+          <div>
+            <label className="sr-only" htmlFor="login-password">
+              Password
+            </label>
+            <input
+              id="login-password"
+              type="password"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="h-14 w-full rounded-lg border border-outline-variant bg-surface px-4 font-body text-base text-on-surface outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+              placeholder="Enter your password"
+            />
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-error/20 bg-error/10 px-4 py-3 font-body text-sm text-error">
+              {error}
             </div>
+          )}
 
-            <div>
-              <label className="block text-sm font-label font-bold text-on-surface-variant uppercase tracking-wider mb-2 flex items-center justify-between">
-                <span>Password</span>
-              </label>
-              <div className="mt-1">
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-surface-container-highest border border-outline-variant/20 focus:border-primary/50 focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 rounded-lg font-body text-on-surface px-4 py-3 transition-all outline-none"
-                  placeholder="••••••••"
-                />
-              </div>
-            </div>
-
-            {error && (
-              <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg text-sm font-body">
-                {error}
-              </div>
-            )}
-
-            <div>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-sm font-label font-bold text-sm text-white gradient-primary hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 tracking-wider uppercase items-center gap-2"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    Authenticating...
-                  </>
-                ) : (
-                  <>
-                    <Lock size={18} />
-                    Unlock Portal
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        </div>
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="mt-8 flex h-14 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 font-label text-base font-bold text-primary-foreground transition hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading && <Loader2 size={18} className="animate-spin" />}
+            {isLoading ? 'Logging in...' : 'Login'}
+          </button>
+        </form>
       </div>
     </div>
   );

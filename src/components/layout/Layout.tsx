@@ -1,67 +1,65 @@
-import { ReactNode, useState, useEffect } from "react";
-import { Sidebar } from "./Sidebar";
+import { ReactNode, useEffect, useState } from "react";
 import { Menu } from "lucide-react";
+import { Sidebar } from "./Sidebar";
+import { BrandLockup } from "../BrandLockup";
+
+const DESKTOP_BREAKPOINT = 768;
 
 export function Layout({ children }: { children: ReactNode }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    const saved = localStorage.getItem("sidebar-collapsed");
-    return saved ? JSON.parse(saved) : false;
-  });
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== "undefined" && window.innerWidth >= DESKTOP_BREAKPOINT);
 
   useEffect(() => {
-    localStorage.setItem("sidebar-collapsed", JSON.stringify(isCollapsed));
-  }, [isCollapsed]);
+    const handleResize = () => {
+      const nextIsDesktop = window.innerWidth >= DESKTOP_BREAKPOINT;
+      setIsDesktop(nextIsDesktop);
 
-  // Handle auto-collapse on click outside
-  const closeSidebar = () => setIsSidebarOpen(false);
+      if (nextIsDesktop) {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   return (
-    <div className="bg-surface text-on-surface flex h-screen overflow-hidden antialiased print:block print:overflow-visible print:bg-white print:h-auto">
-      {/* Sidebar Overlay for mobile/outside clicks */}
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/40 z-30 backdrop-blur-[2px] transition-all"
-          onClick={closeSidebar}
+    <div className="bg-surface text-on-surface min-h-screen antialiased print:block print:min-h-0 print:overflow-visible print:bg-white">
+      {!isDesktop && isMobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/35 backdrop-blur-[3px] transition-opacity md:hidden"
+          onClick={() => setIsMobileSidebarOpen(false)}
         />
       )}
 
       <div className="print:hidden">
-        <Sidebar 
-          isCollapsed={isCollapsed} 
-          setIsCollapsed={setIsCollapsed} 
-          isOpen={isSidebarOpen}
-          setIsOpen={setIsSidebarOpen}
+        <Sidebar
+          isOpen={isDesktop ? true : isMobileSidebarOpen}
+          setIsOpen={setIsMobileSidebarOpen}
+          isDesktop={isDesktop}
         />
       </div>
 
-      <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out h-screen print:h-auto print:ml-0 print:block print:overflow-visible overflow-hidden`}>
-        {/* Hamburger Button Header (Fixed at top) */}
-        <header className="p-4 flex items-center md:hidden no-print flex-shrink-0 bg-surface/80 backdrop-blur-md z-10 border-b border-outline-variant/10">
-          <button 
-            onClick={() => setIsSidebarOpen(true)}
-            className="p-2 hover:bg-surface-container-high rounded-lg text-primary transition-colors"
+      <div className="relative flex min-h-screen flex-col transition-[padding] duration-300 ease-out md:pl-[4.75rem] print:block print:min-h-0 print:overflow-visible print:pl-0">
+        <header className="sticky top-0 z-20 flex shrink-0 items-center gap-4 border-b border-outline-variant/10 bg-surface/88 px-4 py-4 backdrop-blur-xl md:hidden no-print">
+          <button
+            onClick={() => setIsMobileSidebarOpen(true)}
+            className="rounded-2xl border border-outline-variant/10 bg-surface-container-lowest/90 p-2.5 text-primary shadow-sm transition-colors hover:bg-surface-container-high"
+            aria-label="Open sidebar"
           >
             <Menu size={24} />
           </button>
-          <span className="ml-4 font-headline font-bold text-lg text-on-surface">NoteryXpert</span>
+          <BrandLockup
+            markClassName="h-9 w-9"
+            textClassName="text-lg"
+            subtitle="Secure workspace"
+            subtitleClassName="tracking-[0.24em]"
+          />
         </header>
 
-        {/* Desktop Hamburger Button (Floating) */}
-        <div className="hidden md:block absolute top-4 left-4 z-20 no-print">
-           {!isSidebarOpen && (
-             <button 
-               onClick={() => setIsSidebarOpen(true)}
-               className="p-2 hover:bg-surface-container-high rounded-lg text-primary transition-colors bg-surface-container-low/80 backdrop-blur-sm shadow-sm border border-outline-variant/10"
-             >
-               <Menu size={24} />
-             </button>
-           )}
-        </div>
-
-        {/* Main Content Area - This should be scrollable */}
-        <div className={`flex-1 overflow-y-auto transition-all ${isSidebarOpen && !isCollapsed ? "md:ml-64" : isSidebarOpen && isCollapsed ? "md:ml-20" : ""}`}>
+        <div className="app-scroll flex-1 print:overflow-visible">
           {children}
         </div>
       </div>

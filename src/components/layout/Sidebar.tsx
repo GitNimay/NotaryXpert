@@ -1,152 +1,202 @@
-import { Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, FileText, Users, Settings, CircleHelp, Plus, ChevronLeft, ChevronRight, X } from "lucide-react";
-import { cn } from "../../lib/utils";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import {
+  FileText,
+  LayoutDashboard,
+  Loader2,
+  LogOut,
+  Plus,
+  Settings,
+  Users,
+  X,
+} from "lucide-react";
 import { useState } from "react";
+import { signOut } from "firebase/auth";
+import { auth } from "../../firebaseAuth";
+import { cn } from "../../lib/utils";
+import { BrandLockup, BrandMark } from "../BrandLockup";
 
 interface SidebarProps {
-  isCollapsed: boolean;
-  setIsCollapsed: (collapsed: boolean) => void;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
+  isDesktop: boolean;
 }
 
-export function Sidebar({ isCollapsed, setIsCollapsed, isOpen, setIsOpen }: SidebarProps) {
+const links = [
+  { to: "/", icon: LayoutDashboard, label: "Dashboard" },
+  { to: "/documents", icon: FileText, label: "Documents" },
+  { to: "/clients", icon: Users, label: "Clients" },
+  { to: "/settings", icon: Settings, label: "Settings" },
+];
+
+export function Sidebar({ isOpen, setIsOpen, isDesktop }: SidebarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
-  const links = [
-    { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-    { to: "/documents", icon: FileText, label: "Documents" },
-    { to: "/clients", icon: Users, label: "Clients" },
-    { to: "/settings", icon: Settings, label: "Settings" },
-  ];
+  const isExpanded = isDesktop ? isHovered : true;
 
-  const isExpanded = !isCollapsed || isHovered;
-
-  const handleMouseEnter = () => {
-    if (isCollapsed) {
-      setIsHovered(true);
+  const handleNavigationClick = () => {
+    if (!isDesktop) {
+      setIsOpen(false);
     }
   };
 
-  const handleMouseLeave = () => {
-    if (isCollapsed) {
-      setIsHovered(false);
+  const handleLogout = async () => {
+    if (isSigningOut) {
+      return;
+    }
+
+    setIsSigningOut(true);
+
+    try {
+      await signOut(auth);
+      setIsOpen(false);
+      navigate("/login", { replace: true });
+    } catch (error) {
+      console.error("Failed to sign out.", error);
+      setIsSigningOut(false);
     }
   };
 
   return (
-    <nav 
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+    <nav
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onFocusCapture={() => setIsHovered(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setIsHovered(false);
+        }
+      }}
       className={cn(
-        "bg-surface-container-low text-primary flex-col h-screen py-8 border-r-0 fixed left-0 top-0 z-40 flex transition-all duration-300 ease-in-out shadow-xl",
-        isOpen ? (isExpanded ? "w-64" : "w-20") : "w-0 overflow-hidden -translate-x-full"
+        "fixed inset-y-0 left-0 z-40 p-2 transition-[width,transform] duration-300 ease-out",
+        isDesktop ? "translate-x-0" : isOpen ? "translate-x-0" : "-translate-x-full",
+        isDesktop ? (isExpanded ? "w-56" : "w-[4.75rem]") : "w-[16rem] max-w-[calc(100vw-1rem)]"
       )}
+      aria-label="Primary navigation"
     >
-      {/* Header with Close button for mobile */}
-      <div className={cn("px-4 mb-10 flex flex-col items-start transition-all", !isExpanded ? "items-center px-0" : "px-8")}>
-        <div className="flex items-center justify-between w-full">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-primary/20">
-               <FileText className="text-on-primary" size={24} />
-            </div>
-            {isExpanded && (
-              <div className="flex flex-col">
-                <h1 className="font-headline text-xl font-bold text-on-surface whitespace-nowrap">NoteryXpert</h1>
-                <span className="font-label text-[10px] text-on-surface-variant tracking-widest uppercase">Editorial Authority</span>
-              </div>
+      <div className="sidebar-shell flex h-full flex-col overflow-hidden rounded-2xl">
+        <div className={cn("flex items-center border-b border-outline-variant/50", isExpanded ? "justify-between gap-2 px-3 py-3" : "flex-col gap-3 px-2 py-3")}>
+          <div className={cn("min-w-0", isExpanded ? "flex-1" : "flex items-center justify-center")}>
+            {isExpanded ? (
+              <BrandLockup
+                markClassName="h-10 w-10"
+                textClassName="text-[18px]"
+              />
+            ) : (
+              <BrandMark className="h-10 w-10" />
             )}
           </div>
-          {isExpanded && (
-            <button onClick={() => setIsOpen(false)} className="md:hidden p-2 hover:bg-surface-container-high rounded-full">
-              <X size={20} />
+
+          {!isDesktop && (
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-outline-variant/60 bg-surface-container-lowest text-on-surface transition-colors hover:bg-surface-container"
+              aria-label="Close sidebar"
+            >
+              <X size={16} />
             </button>
           )}
         </div>
-      </div>
 
-      {/* Collapse Toggle (Manual override) - Only show if sidebar is open */}
-      <button 
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsCollapsed(!isCollapsed);
-          setIsHovered(false);
-        }}
-        className={cn(
-          "absolute -right-3 top-12 bg-primary text-on-primary rounded-full p-1 shadow-md hover:scale-110 transition-transform z-50 border-2 border-surface",
-          !isOpen && "hidden"
-        )}
-      >
-        {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-      </button>
+        <div className={cn("px-3 pt-3", !isExpanded && "px-2")}>
+          <Link
+            to="/documents/new"
+            onClick={handleNavigationClick}
+            title={!isExpanded ? "New document" : ""}
+            className={cn(
+              "group flex items-center rounded-xl border border-outline-variant/70 bg-surface-container-lowest text-on-surface shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/15 hover:bg-white hover:shadow-md active:translate-y-0 active:scale-[0.98]",
+              isExpanded ? "gap-2.5 px-3 py-2.5" : "mx-auto h-10 w-10 justify-center"
+            )}
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-container-high text-on-surface transition-colors duration-200 group-hover:bg-surface-container">
+              <Plus size={17} />
+            </span>
+            {isExpanded && (
+              <span className="truncate font-body text-sm font-semibold text-on-surface">New Document</span>
+            )}
+          </Link>
+        </div>
 
-      {/* Close button for Desktop (Optional, but good for UX) */}
-      {isOpen && isExpanded && (
-        <button 
-          onClick={() => setIsOpen(false)}
-          className="absolute right-4 top-4 p-2 hover:bg-surface-container-high rounded-full md:flex hidden"
-        >
-          <ChevronLeft size={20} />
-        </button>
-      )}
-
-      <div className="px-4 mb-8">
-        <Link 
-          to="/documents/new" 
-          className={cn(
-            "gradient-primary text-on-primary rounded-xl py-3 flex items-center gap-2 hover:opacity-90 transition-all font-body font-medium shadow-sm",
-            !isExpanded ? "justify-center px-0 h-12" : "px-4 justify-start"
+        <div className={cn("min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-4", !isExpanded && "px-2")}>
+          {isExpanded && (
+            <p className="px-2 font-label text-[10px] font-semibold uppercase tracking-[0.18em] text-on-surface-variant">
+              Workspace
+            </p>
           )}
-          title={!isExpanded ? "New Document" : ""}
-          onClick={() => setIsOpen(false)}
-        >
-          <Plus size={18} />
-          {isExpanded && <span className="whitespace-nowrap">New Document</span>}
-        </Link>
-      </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <ul className="space-y-1 font-body font-medium text-sm w-full">
-          {links.map((link) => {
-            const isActive = location.pathname === link.to || (link.to !== "/" && location.pathname.startsWith(link.to));
+          <ul className="mt-2 space-y-1">
+            {links.map((link) => {
+              const isActive = location.pathname === link.to || (link.to !== "/" && location.pathname.startsWith(link.to));
 
-            return (
-              <li key={link.to}>
-                <Link
-                  to={link.to}
-                  title={!isExpanded ? link.label : ""}
-                  onClick={() => setIsOpen(false)}
-                  className={cn(
-                    "py-3 flex items-center transition-all duration-200",
-                    !isExpanded ? "px-0 justify-center" : "px-8 gap-4",
-                    isActive
-                      ? cn(
-                          "text-primary font-bold",
-                          isExpanded ? "bg-surface-container-lowest rounded-l-full ml-4 pl-4 translate-x-1" : ""
-                        )
-                      : "text-on-surface hover:text-primary translate-x-1"
-                  )}
-                >
-                  <link.icon className={cn(isActive ? "fill-primary/20 text-primary" : "")} size={20} />
-                  {isExpanded && <span className="whitespace-nowrap">{link.label}</span>}
-                  {!isExpanded && isActive && <div className="absolute left-0 w-1 h-6 bg-primary rounded-r-full" />}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+              return (
+                <li key={link.to}>
+                  <Link
+                    to={link.to}
+                    onClick={handleNavigationClick}
+                    title={!isExpanded ? link.label : ""}
+                    className={cn(
+                      "group flex items-center rounded-xl transition-all duration-200",
+                      isExpanded ? "gap-2.5 px-2 py-2" : "mx-auto h-10 w-10 justify-center",
+                      isActive
+                        ? "bg-primary text-on-primary shadow-sm"
+                        : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex items-center justify-center rounded-lg transition-all duration-200",
+                        isExpanded ? "h-8 w-8" : "h-8 w-8",
+                        isActive
+                          ? "bg-white/12 text-on-primary"
+                          : "bg-surface-container-lowest text-on-surface group-hover:bg-white"
+                      )}
+                    >
+                      <link.icon size={17} />
+                    </span>
 
-      <div className="mt-auto">
-        <ul className="space-y-1 font-body font-medium text-sm">
-          <li>
-            <a href="#" className={cn("text-on-surface py-3 flex items-center hover:text-primary transition-all translate-x-1 duration-200", !isExpanded ? "px-0 justify-center" : "px-8 gap-4")}>
-              <CircleHelp size={20} />
-              {isExpanded && <span>Help Center</span>}
-            </a>
-          </li>
-        </ul>
+                    {isExpanded && (
+                      <span className={cn("min-w-0 truncate font-body text-sm font-medium", isActive ? "text-on-primary" : "text-on-surface")}>
+                        {link.label}
+                      </span>
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        <div className={cn("border-t border-outline-variant/50 px-3 py-3", !isExpanded && "px-2")}>
+          {isExpanded && (
+            <p className="px-2 pb-2 font-label text-[10px] font-semibold uppercase tracking-[0.18em] text-on-surface-variant">
+              Session
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={isSigningOut}
+            title={!isExpanded ? "Logout" : ""}
+            className={cn(
+              "group flex w-full items-center rounded-xl text-error transition-all duration-200 hover:bg-error/8 disabled:cursor-not-allowed disabled:opacity-70",
+              isExpanded ? "gap-2.5 px-2 py-2" : "mx-auto h-10 w-10 justify-center"
+            )}
+          >
+            <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg", isExpanded && "bg-error/8")}>
+              {isSigningOut ? <Loader2 size={17} className="animate-spin" /> : <LogOut size={17} />}
+            </span>
+
+            {isExpanded && (
+              <span className="min-w-0 truncate text-left font-body text-sm font-medium">
+                {isSigningOut ? "Signing out..." : "Logout"}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
     </nav>
   );

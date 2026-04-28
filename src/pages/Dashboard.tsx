@@ -4,7 +4,7 @@ import { FileText, Folder, ClipboardList, CalendarDays, Loader2, Calendar, Trend
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
-import { db } from "../firebase";
+import { db } from "../firebaseDb";
 
 export function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
