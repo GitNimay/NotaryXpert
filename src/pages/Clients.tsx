@@ -16,6 +16,7 @@ interface ParsedClient {
    photoUrl?: string;
    linkedDocuments: number;
    latestDocumentId: string;
+   latestDocumentUrl?: string;
 }
 
 export function Clients() {
@@ -27,9 +28,11 @@ export function Clients() {
   const phoneLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phoneLongPressTriggeredRef = useRef(false);
 
-  const openClientDocument = (documentId: string) => {
-    if (!documentId) return;
-    const targetUrl = `/documents/new?docId=${encodeURIComponent(documentId)}`;
+  const openClientDocument = (documentUrl?: string, documentId?: string) => {
+    if (!documentUrl && !documentId) return;
+    const targetUrl = documentUrl
+      ? documentUrl
+      : `/documents/new?docId=${encodeURIComponent(documentId ?? "")}`;
     const anchor = document.createElement("a");
     anchor.href = targetUrl;
     anchor.target = "_blank";
@@ -92,7 +95,8 @@ export function Clients() {
                       email: person.email,
                       photoUrl: person.photo?.startsWith('http') ? person.photo : undefined,
                       linkedDocuments: 1,
-                      latestDocumentId: documentId
+                      latestDocumentId: documentId,
+                      latestDocumentUrl: data.pdfUrl
                    });
                 }
              });
@@ -174,8 +178,8 @@ export function Clients() {
                   <div
                     key={idx}
                     className="content-auto bg-surface-container-lowest rounded-2xl border border-outline-variant/15 p-6 hover:shadow-lg transition-shadow duration-300 flex flex-col gap-5 editorial-shadow cursor-pointer"
-                    onClick={() => openClientDocument(client.latestDocumentId)}
-                    title="Open latest document in new tab"
+                    onClick={() => openClientDocument(client.latestDocumentUrl, client.latestDocumentId)}
+                    title="Open latest uploaded document in new tab"
                   >
                      
                      <div className="flex items-center gap-5">

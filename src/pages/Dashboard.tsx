@@ -45,9 +45,11 @@ export function Dashboard() {
   const [recentDocs, setRecentDocs] = useState<any[]>([]);
   const [chartData, setChartData] = useState<{label: string, count: number, percentage: number, date: string}[]>([]);
 
-  const openDocumentInNewTab = (documentId: string) => {
-    if (!documentId) return;
-    const targetUrl = `/documents/new?docId=${encodeURIComponent(documentId)}`;
+  const openDocumentInNewTab = (documentUrl?: string, documentId?: string) => {
+    if (!documentUrl && !documentId) return;
+    const targetUrl = documentUrl
+      ? documentUrl
+      : `/documents/new?docId=${encodeURIComponent(documentId ?? "")}`;
     const anchor = document.createElement("a");
     anchor.href = targetUrl;
     anchor.target = "_blank";
@@ -113,7 +115,8 @@ export function Dashboard() {
                client: clientName,
                date: createdAt ? createdAt.toLocaleDateString() : "Unknown",
                status: data.pdfUrl ? "COMPLETED" : "DRAFT",
-               srNo: data.srNo
+               srNo: data.srNo,
+               pdfUrl: data.pdfUrl
             });
           }
         });
@@ -266,7 +269,7 @@ export function Dashboard() {
                            <div className="p-8 text-center text-on-surface-variant font-body text-sm">No recent documents found in database.</div>
                         ) : (
                           recentDocs.map((doc) => (
-                            <div key={doc.id} className="grid grid-cols-1 md:grid-cols-12 items-center px-6 py-4 hover:bg-surface-bright transition-colors gap-y-2 cursor-pointer group" onClick={() => openDocumentInNewTab(doc.id)}>
+                            <div key={doc.id} className="grid grid-cols-1 md:grid-cols-12 items-center px-6 py-4 hover:bg-surface-bright transition-colors gap-y-2 cursor-pointer group" onClick={() => openDocumentInNewTab(doc.pdfUrl, doc.id)}>
                               <div className="col-span-1 md:col-span-3 font-label text-sm font-semibold text-on-surface group-hover:text-primary transition-colors truncate pr-2">
                                 <span className="md:hidden font-semibold mr-2 text-on-surface-variant">Subject:</span>{doc.srNo ? `Sr: ${doc.srNo}` : doc.id}
                               </div>
