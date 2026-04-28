@@ -1,5 +1,5 @@
 import { Layout } from "../components/layout/Layout";
-import { FileText, Folder, ClipboardList, CalendarDays, Loader2, Calendar, TrendingUp } from "lucide-react";
+import { FileText, Folder, CalendarDays, Loader2, Calendar, TrendingUp } from "lucide-react";
 
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
@@ -40,8 +40,7 @@ export function Dashboard() {
   const [metrics, setMetrics] = useState({
     total: 0,
     today: 0,
-    month: 0,
-    pending: 0
+    month: 0
   });
   const [recentDocs, setRecentDocs] = useState<any[]>([]);
   const [chartData, setChartData] = useState<{label: string, count: number, percentage: number, date: string}[]>([]);
@@ -76,7 +75,6 @@ export function Dashboard() {
         let total = 0;
         let today = 0;
         let month = 0;
-        let pending = 0;
         
         // Setup empty 7-day map with stable YYYY-MM-DD keys
         const last7DaysMap = new Map<string, number>();
@@ -96,8 +94,6 @@ export function Dashboard() {
           const createdAt = data.createdAt ? data.createdAt.toDate() : null;
           
           total++;
-          if (!data.pdfUrl) pending++;
-          
           if (createdAt) {
             const docDateKey = getLocalDateKey(createdAt);
             if (docDateKey === todayKey) today++;
@@ -137,7 +133,7 @@ export function Dashboard() {
            };
         });
 
-        setMetrics({ total, today, month, pending });
+        setMetrics({ total, today, month });
         setChartData(finalChartData);
         setRecentDocs(formattedDocsList);
         
@@ -179,7 +175,7 @@ export function Dashboard() {
           ) : (
             <>
               {/* Stats Bento Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div className="bg-surface-container-lowest rounded-xl p-6 editorial-shadow flex flex-col justify-between h-40 border border-outline-variant/15 hover:border-primary/30 transition-colors">
                   <div className="flex justify-between items-start">
                     <span className="font-label text-sm text-on-surface-variant font-medium uppercase tracking-wider">Total Docs</span>
@@ -216,17 +212,6 @@ export function Dashboard() {
                   </div>
                 </div>
 
-                <div className="bg-surface-container-lowest rounded-xl p-6 editorial-shadow flex flex-col justify-between h-40 border border-outline-variant/15 hover:border-primary/30 transition-colors">
-                  <div className="flex justify-between items-start">
-                    <span className="font-label text-sm text-on-surface-variant font-medium uppercase tracking-wider">Pending Signatures</span>
-                    <span className="text-error bg-error/10 p-2 rounded-lg flex items-center justify-center">
-                      <ClipboardList size={20} className="fill-error/20" />
-                    </span>
-                  </div>
-                  <div className="mt-4">
-                    <span className="font-headline text-4xl font-bold text-on-surface">{metrics.pending.toLocaleString()}</span>
-                  </div>
-                </div>
               </div>
 
               {/* Grid 2 Columns: Growth Chart & Recent Documents */}
