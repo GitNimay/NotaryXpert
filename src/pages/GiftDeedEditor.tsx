@@ -390,6 +390,7 @@ export function GiftDeedEditor() {
 
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
+  const [isSendingMail, setIsSendingMail] = useState(false);
 
   // Auto-fetch the next logical Sequence strictly when the editor loads
   useEffect(() => {
@@ -631,9 +632,7 @@ export function GiftDeedEditor() {
         const qs = await getDocs(q);
         const isDuplicate = qs.docs.some(docSnap => docSnap.id !== fetchQuery.trim() && docSnap.data().pageNo === pageNo);
         if (isDuplicate) {
-          alert("This Register No and Reg.Page No combination already exists! Please use a unique combination.");
-          setIsSaving(false);
-          return;
+          throw new Error("This Register No and Reg.Page No combination already exists. Please use a unique combination.");
         }
       }
 
@@ -657,6 +656,8 @@ export function GiftDeedEditor() {
           new Promise((_, r) => setTimeout(() => r(new Error('Firestore update timed out! Check Firestore Rules.')), 10000))
         ]);
         if (!silent) alert(`Document updated successfully in Firebase!\n\nDocument ID: ${docRef.id}`);
+        console.log('Firebase Save transaction completed securely!');
+        return docRef.id;
       } else {
         // Create new document
         (docData as any).createdAt = new Date();
@@ -677,11 +678,13 @@ export function GiftDeedEditor() {
           registerNumber: kNo,
           currentPageNo: nextPageNo
         }, { merge: true }).catch(e => console.error("Failed to update global counters", e));
+        console.log('Firebase Save transaction completed securely!');
+        return docRef.id;
       }
-      console.log('Firebase Save transaction completed securely!');
     } catch (error) {
       console.error("Error saving to Firebase:", error);
-      if (!silent) alert("Failed to save document to Firebase. Check console for details.");
+      const message = error instanceof Error && error.message ? error.message : "Failed to save document to Firebase. Check console for details.";
+      if (!silent) alert(message);
       throw error; // bubble up so the generator knows it failed
     } finally {
       if (!silent) setIsSaving(false);
@@ -782,10 +785,13 @@ export function GiftDeedEditor() {
 
       const data = await response.json();
       const newPdfUrl = data.secure_url;
-      setPdfUrl(newPdfUrl);
+      if (!newPdfUrl) {
+        throw new Error("Cloudinary did not return a PDF URL.");
+      }
 
       // Auto-save EVERYTHING to Firebase unconditionally silently
       await handleSaveToFirebase(newPdfUrl, true);
+      setPdfUrl(newPdfUrl);
 
       alert("Success! PDF automatically generated from screen, uploaded to Cloudinary, and ENTIRE document securely saved to your Database!");
 
@@ -817,14 +823,19 @@ export function GiftDeedEditor() {
     }
   };
 
-  const handleSendMail = () => {
+  const handleSendMail = async () => {
     if (!pdfUrl) {
       alert("Please generate and upload the PDF first!");
       return;
     }
-    const recipient = persons[0]?.email || "";
-    const subject = encodeURIComponent(`Notarized Document - ${docName || 'Gift Deed'}`);
-    const bodyText = `Please find attached the notarized copy of Document duly certified in accordance with the applicable legal requirements.
+
+    setIsSendingMail(true);
+    try {
+      await handleSaveToFirebase(pdfUrl, true);
+
+      const recipient = persons[0]?.email || "";
+      const subject = encodeURIComponent(`Notarized Document - ${docName || 'Gift Deed'}`);
+      const bodyText = `Please find attached the notarized copy of Document duly certified in accordance with the applicable legal requirements.
 
 The document has been completed and notarized to ensure its authenticity and validity for your intended purpose. Kindly review the attached copy and confirm receipt.
 
@@ -840,9 +851,16 @@ Advocate High Court
 
 Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.com`;
 
-    const body = encodeURIComponent(bodyText);
-    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${recipient}&su=${subject}&body=${body}`;
-    window.open(gmailUrl, '_blank');
+      const body = encodeURIComponent(bodyText);
+      const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${recipient}&su=${subject}&body=${body}`;
+      window.open(gmailUrl, '_blank');
+    } catch (error) {
+      console.error("Email compose blocked because Firebase save failed:", error);
+      const message = error instanceof Error && error.message ? error.message : "Unknown Firebase error.";
+      alert(`Email was not opened because the document could not be saved to Firebase.\n\n${message}`);
+    } finally {
+      setIsSendingMail(false);
+    }
   };
 
   return (
@@ -1100,10 +1118,15 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
                     </button>
                     <button
                       onClick={handleSendMail}
-                      className="w-full sm:w-auto justify-center flex items-center gap-2 rounded-xl border border-secondary-container/50 bg-secondary-container text-on-secondary-container px-4 py-2.5 font-body text-xs font-bold uppercase tracking-[0.16em] shadow-sm transition-all whitespace-nowrap hover:opacity-90 active:scale-[0.98]"
+                      disabled={isSendingMail}
+                      className={`w-full sm:w-auto justify-center flex items-center gap-2 rounded-xl border border-secondary-container/50 px-4 py-2.5 font-body text-xs font-bold uppercase tracking-[0.16em] shadow-sm transition-all whitespace-nowrap ${
+                        isSendingMail
+                          ? 'bg-surface-variant text-on-surface-variant opacity-70 cursor-not-allowed'
+                          : 'bg-secondary-container text-on-secondary-container hover:opacity-90 active:scale-[0.98]'
+                      }`}
                     >
-                      <Mail size={16} />
-                      Send via Gmail
+                      {isSendingMail ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
+                      {isSendingMail ? "Saving..." : "Send via Gmail"}
                     </button>
                   </>
                 )}

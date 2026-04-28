@@ -3,10 +3,32 @@ import { FileText, Folder, ClipboardList, CalendarDays, Loader2, Calendar, Trend
 
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { onAuthStateChanged, type User } from "firebase/auth";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { auth } from "../firebaseAuth";
 import { db } from "../firebaseDb";
 
+function cleanName(value?: string | null) {
+  return value?.replace(/\s+/g, " ").trim() || "";
+}
+
+function getFirstName(user: User | null) {
+  const displayName = cleanName(user?.displayName);
+  if (displayName) {
+    return displayName.split(" ")[0];
+  }
+
+  const emailName = user?.email?.split("@")[0] || "";
+  const firstToken = emailName.split(/[._+\-\d]+/).find(Boolean);
+  if (!firstToken) {
+    return "there";
+  }
+
+  return firstToken.charAt(0).toUpperCase() + firstToken.slice(1).toLowerCase();
+}
+
 export function Dashboard() {
+  const [user, setUser] = useState<User | null>(() => auth.currentUser);
   const [isLoading, setIsLoading] = useState(true);
   const [metrics, setMetrics] = useState({
     total: 0,
@@ -16,6 +38,12 @@ export function Dashboard() {
   });
   const [recentDocs, setRecentDocs] = useState<any[]>([]);
   const [chartData, setChartData] = useState<{label: string, count: number, percentage: number, date: string}[]>([]);
+
+  useEffect(() => {
+    return onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -110,7 +138,7 @@ export function Dashboard() {
           {/* Header & Quick Actions */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
             <div>
-              <h2 className="font-headline text-4xl font-bold text-on-surface leading-tight">Overview</h2>
+              <h2 className="font-headline text-4xl font-bold text-on-surface leading-tight">Hi {getFirstName(user)}</h2>
               <p className="font-body text-on-surface-variant mt-2 text-lg">Your live notarization analytics.</p>
             </div>
             <div className="flex gap-4">
