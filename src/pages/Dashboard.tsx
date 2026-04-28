@@ -27,6 +27,13 @@ function getFirstName(user: User | null) {
   return firstToken.charAt(0).toUpperCase() + firstToken.slice(1).toLowerCase();
 }
 
+function getLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function Dashboard() {
   const [user, setUser] = useState<User | null>(() => auth.currentUser);
   const [isLoading, setIsLoading] = useState(true);
@@ -52,7 +59,7 @@ export function Dashboard() {
         const qs = await getDocs(q);
         
         const now = new Date();
-        const todayStr = now.toLocaleDateString();
+        const todayKey = getLocalDateKey(now);
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
 
@@ -61,13 +68,15 @@ export function Dashboard() {
         let month = 0;
         let pending = 0;
         
-        // Setup empty 7 days map
+        // Setup empty 7-day map with stable YYYY-MM-DD keys
         const last7DaysMap = new Map<string, number>();
+        const last7Days: Date[] = [];
         for (let i = 6; i >= 0; i--) {
           const d = new Date(now);
           d.setDate(d.getDate() - i);
-          const formattedDate = d.toLocaleDateString(); 
-          last7DaysMap.set(formattedDate, 0);
+          const key = getLocalDateKey(d);
+          last7DaysMap.set(key, 0);
+          last7Days.push(d);
         }
 
         const formattedDocsList: any[] = [];
@@ -80,12 +89,12 @@ export function Dashboard() {
           if (!data.pdfUrl) pending++;
           
           if (createdAt) {
-            const docDateStr = createdAt.toLocaleDateString();
-            if (docDateStr === todayStr) today++;
+            const docDateKey = getLocalDateKey(createdAt);
+            if (docDateKey === todayKey) today++;
             if (createdAt.getMonth() === currentMonth && createdAt.getFullYear() === currentYear) month++;
             
-            if (last7DaysMap.has(docDateStr)) {
-               last7DaysMap.set(docDateStr, last7DaysMap.get(docDateStr)! + 1);
+            if (last7DaysMap.has(docDateKey)) {
+               last7DaysMap.set(docDateKey, last7DaysMap.get(docDateKey)! + 1);
             }
           }
 
@@ -104,12 +113,13 @@ export function Dashboard() {
 
         // Compute max for chart scaling
         const maxCount = Math.max(1, ...Array.from(last7DaysMap.values()));
-        const finalChartData = Array.from(last7DaysMap.entries()).map(([dateStr, count]) => {
-           const d = new Date(dateStr);
-           const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' }); 
+        const finalChartData = last7Days.map((dayDate) => {
+           const dayKey = getLocalDateKey(dayDate);
+           const count = last7DaysMap.get(dayKey) ?? 0;
+           const dayLabel = dayDate.toLocaleDateString('en-US', { weekday: 'short' });
            
            return {
-             date: dateStr,
+             date: dayKey,
              label: dayLabel,
              count: count,
              percentage: Math.max((count / maxCount) * 100, 2) // Ensure at least 2% height for empty days so bar is visible
