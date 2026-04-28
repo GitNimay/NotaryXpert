@@ -63,6 +63,18 @@ function buildPreviewChunks<T extends { email?: string; phone?: string }>(person
   return chunks;
 }
 
+const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const AADHAR_REGEX = /^\d{4}\s\d{4}\s\d{4}$/;
+
+function normalizePanInput(value: string) {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
+}
+
+function normalizeAadharInput(value: string) {
+  const digitsOnly = value.replace(/\D/g, "").slice(0, 12);
+  return digitsOnly.replace(/(\d{4})(?=\d)/g, "$1 ").trim();
+}
+
 interface PreviewPageProps {
   chunk: PreviewPerson[];
   pageIndex: number;
@@ -751,8 +763,34 @@ export function GiftDeedEditor() {
         alert(`Please enter either Aadhar Card or PAN Card for Person ${i + 1}`);
         return false;
       }
+      if (p.aadhar?.trim() && !AADHAR_REGEX.test(p.aadhar.trim())) {
+        alert(`Please enter a valid Aadhar Card for Person ${i + 1}.`);
+        return false;
+      }
+      if (p.pan?.trim() && !PAN_REGEX.test(p.pan.trim())) {
+        alert(`Please enter a valid PAN Card for Person ${i + 1} in format ABCDE1234F.`);
+        return false;
+      }
     }
     return true;
+  };
+
+  const getAadharValidationMessage = (aadhar?: string) => {
+    const trimmedAadhar = aadhar?.trim() ?? "";
+    if (!trimmedAadhar) return "";
+    if (!AADHAR_REGEX.test(trimmedAadhar)) {
+      return "Invalid Aadhar format.";
+    }
+    return "";
+  };
+
+  const getPanValidationMessage = (pan?: string) => {
+    const trimmedPan = pan?.trim() ?? "";
+    if (!trimmedPan) return "";
+    if (!PAN_REGEX.test(trimmedPan)) {
+      return "Invalid PAN format. Use ABCDE1234F.";
+    }
+    return "";
   };
 
   const handleAutoGenerateAndUploadPdf = async () => {
@@ -1032,11 +1070,53 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
                     </div>
                     <div className="2xl:col-span-3">
                       <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Aadhar Card *</label>
-                      <input type="text" value={person.aadhar} onChange={(e) => updatePerson(person.id, 'aadhar', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="XXXX-XXXX-XXXX" />
+                      {(() => {
+                        const aadharError = getAadharValidationMessage(person.aadhar);
+                        return (
+                          <input
+                            type="text"
+                            value={person.aadhar}
+                            onChange={(e) => updatePerson(person.id, 'aadhar', normalizeAadharInput(e.target.value))}
+                            className={`w-full p-2.5 border rounded-lg bg-surface outline-none transition-all font-medium text-sm ${
+                              aadharError
+                                ? 'border-error text-error focus:ring-2 focus:ring-error/20 focus:border-error'
+                                : 'border-outline-variant/40 focus:ring-2 focus:ring-primary/20 focus:border-primary/50'
+                            }`}
+                            placeholder="1234 5678 9012"
+                            maxLength={14}
+                          />
+                        );
+                      })()}
+                      {getAadharValidationMessage(person.aadhar) && (
+                        <p className="mt-1 text-[11px] font-medium text-error">
+                          {getAadharValidationMessage(person.aadhar)}
+                        </p>
+                      )}
                     </div>
                     <div className="2xl:col-span-3">
                       <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">PAN Card *</label>
-                      <input type="text" value={person.pan || ''} onChange={(e) => updatePerson(person.id, 'pan', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="ABCDE1234F" />
+                      {(() => {
+                        const panError = getPanValidationMessage(person.pan);
+                        return (
+                      <input
+                        type="text"
+                        value={person.pan || ''}
+                        onChange={(e) => updatePerson(person.id, 'pan', normalizePanInput(e.target.value))}
+                        className={`w-full p-2.5 border rounded-lg bg-surface outline-none transition-all font-medium text-sm uppercase ${
+                          panError
+                            ? 'border-error text-error focus:ring-2 focus:ring-error/20 focus:border-error'
+                            : 'border-outline-variant/40 focus:ring-2 focus:ring-primary/20 focus:border-primary/50'
+                        }`}
+                        placeholder="ABCDE1234F"
+                        maxLength={10}
+                      />
+                        );
+                      })()}
+                      {getPanValidationMessage(person.pan) && (
+                        <p className="mt-1 text-[11px] font-medium text-error">
+                          {getPanValidationMessage(person.pan)}
+                        </p>
+                      )}
                     </div>
                     <div className="md:col-span-2 2xl:col-span-12">
                       <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Residential Address</label>
