@@ -1,5 +1,5 @@
 import { Layout } from "../components/layout/Layout";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type MouseEvent, type TouchEvent } from "react";
 
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { db } from "../firebaseDb";
@@ -15,6 +15,7 @@ interface ParsedClient {
    email?: string;
    photoUrl?: string;
    linkedDocuments: number;
+   latestDocumentId: string;
 }
 
 export function Clients() {
@@ -23,6 +24,35 @@ export function Clients() {
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  const phoneLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const phoneLongPressTriggeredRef = useRef(false);
+
+  const openClientDocument = (documentId: string) => {
+    if (!documentId) return;
+    const targetUrl = `/documents/new?docId=${encodeURIComponent(documentId)}`;
+    const anchor = document.createElement("a");
+    anchor.href = targetUrl;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.click();
+  };
+
+  const startPhoneLongPressCopy = (phone: string, id: string, e: MouseEvent | TouchEvent) => {
+    e.stopPropagation();
+    phoneLongPressTriggeredRef.current = false;
+    phoneLongPressTimerRef.current = setTimeout(() => {
+      handleCopy(phone, id);
+      phoneLongPressTriggeredRef.current = true;
+    }, 600);
+  };
+
+  const clearPhoneLongPressCopy = (e?: MouseEvent | TouchEvent) => {
+    e?.stopPropagation();
+    if (phoneLongPressTimerRef.current) {
+      clearTimeout(phoneLongPressTimerRef.current);
+      phoneLongPressTimerRef.current = null;
+    }
+  };
 
   useEffect(() => {
     const fetchClients = async () => {
@@ -33,6 +63,7 @@ export function Clients() {
         const clientMap = new Map<string, ParsedClient>();
         
         qs.docs.forEach(docSnap => {
+          const documentId = docSnap.id;
           const data = docSnap.data();
           if (data.persons && Array.isArray(data.persons)) {
              data.persons.forEach((person: any) => {
@@ -60,7 +91,8 @@ export function Clients() {
                       phone: person.phone,
                       email: person.email,
                       photoUrl: person.photo?.startsWith('http') ? person.photo : undefined,
-                      linkedDocuments: 1
+                      linkedDocuments: 1,
+                      latestDocumentId: documentId
                    });
                 }
              });
@@ -139,7 +171,12 @@ export function Clients() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                {filteredClients.map((client, idx) => (
-                  <div key={idx} className="content-auto bg-surface-container-lowest rounded-2xl border border-outline-variant/15 p-6 hover:shadow-lg transition-shadow duration-300 flex flex-col gap-5 editorial-shadow">
+                  <div
+                    key={idx}
+                    className="content-auto bg-surface-container-lowest rounded-2xl border border-outline-variant/15 p-6 hover:shadow-lg transition-shadow duration-300 flex flex-col gap-5 editorial-shadow cursor-pointer"
+                    onClick={() => openClientDocument(client.latestDocumentId)}
+                    title="Open latest document in new tab"
+                  >
                      
                      <div className="flex items-center gap-5">
                         <div className="w-16 h-16 rounded-full bg-surface-container-high border-2 border-primary/10 overflow-hidden flex-shrink-0 flex items-center justify-center text-primary font-bold text-xl relative">
@@ -175,7 +212,23 @@ export function Clients() {
                              {client.phone && (
                                 <div className="flex items-center gap-3">
                                    <Phone size={16} className="text-primary opacity-80 flex-shrink-0" />
-                                   <div className="flex-1 font-body text-sm text-on-surface truncate cursor-pointer hover:text-primary transition-colors hover:underline" onClick={() => window.open(`tel:${client.phone}`)}>{client.phone}</div>
+                                   <div
+                                     className="flex-1 font-body text-sm text-on-surface truncate cursor-pointer hover:text-primary transition-colors hover:underline"
+                                     onMouseDown={(e) => startPhoneLongPressCopy(client.phone!, `p-${idx}`, e)}
+                                     onMouseUp={(e) => clearPhoneLongPressCopy(e)}
+                                     onMouseLeave={(e) => clearPhoneLongPressCopy(e)}
+                                     onTouchStart={(e) => startPhoneLongPressCopy(client.phone!, `p-${idx}`, e)}
+                                     onTouchEnd={(e) => clearPhoneLongPressCopy(e)}
+                                     onClick={(e) => {
+                                       e.stopPropagation();
+                                       if (phoneLongPressTriggeredRef.current) {
+                                         e.preventDefault();
+                                       }
+                                     }}
+                                     title="Long press to copy phone number"
+                                   >
+                                     {client.phone}
+                                   </div>
                                 </div>
                              )}
                              {client.email && (

@@ -592,8 +592,7 @@ export function GiftDeedEditor() {
 
   const handleAutoFetch = async (queryParam: string) => {
     setFetchQuery(queryParam);
-    // Firebase IDs are usually 20 characters long
-    if (queryParam.trim().length >= 20) {
+    if (queryParam.trim().length > 0) {
       setIsFetching(true);
       try {
         const docRef = doc(db, "documents", queryParam.trim());
@@ -618,6 +617,14 @@ export function GiftDeedEditor() {
       }
     }
   };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const docIdFromUrl = params.get("docId");
+    if (docIdFromUrl && docIdFromUrl.trim().length > 0) {
+      handleAutoFetch(docIdFromUrl.trim());
+    }
+  }, []);
 
   const handleKNoChange = (newKNo: string) => {
     setKNo(newKNo);
