@@ -1,6 +1,7 @@
 import React, { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Layout } from "../components/layout/Layout";
 import { Camera, Fingerprint, Printer, X, RefreshCw, Plus, Gavel, Search, Loader2, UploadCloud, FileText, Eye, Edit3, Mail, Save } from "lucide-react";
+import { PersonEditorModal } from "../components/PersonEditorModal"; // Import the new modal component
 import { collection, addDoc, getDoc, doc, setDoc, query, orderBy, limit, getDocs, where } from "firebase/firestore"; // Keep db for Firestore operations
 import { db } from "../firebaseDb"; // Keep db for Firestore operations
 // New interface for a person
@@ -15,6 +16,7 @@ interface Person {
   email?: string;
   photo?: string;
   thumb?: string;
+  role?: string;
 }
 
 interface PreviewPerson extends Person {
@@ -28,7 +30,7 @@ function getSafeImageUrl(url?: string) {
   return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
 }
 
-// Define Cloudinary configuration (consider using environment variables for CLOUDINARY_CLOUD_NAME in production)
+// Define Cloudinary configuration
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "dsyow3tjq"; // Replace with your actual Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = "notery"; // Replace with your actual Cloudinary upload preset
 
@@ -105,6 +107,7 @@ interface PreviewPageProps {
   pageNo: string;
   docName: string;
   docPurpose: string;
+  agreementAmount?: string;
 }
 
 const PreviewPage = memo(function PreviewPage({
@@ -119,7 +122,9 @@ const PreviewPage = memo(function PreviewPage({
   pageNo,
   docName,
   docPurpose,
+  agreementAmount,
 }: PreviewPageProps) {
+  console.log(`PreviewPage: Rendering page ${pageIndex}. First person photo: ${chunk[0]?.safePhoto ? 'present' : 'absent'}, thumb: ${chunk[0]?.safeThumb ? 'present' : 'absent'}`);
   return (
     <div className="mobile-preview-wrapper no-print md:print:block">
       <article
@@ -173,7 +178,8 @@ const PreviewPage = memo(function PreviewPage({
                 <div className="flex-1 pr-4">
                   <p style={{ lineHeight: 1.3, margin: 0, marginBottom: "16px" }}>
                     I Mr <span className="font-bold print:font-normal">{person.name}</span> aged <span className="font-bold print:font-normal ml-1">{person.age}</span> yrs.<br />
-                    Residing at <span className="font-bold print:font-normal">{person.addr}</span><br />
+                    Residing at <span className="font-bold print:font-normal">{person.addr}</span>
+                    {person.role && <span> being <span className="font-bold print:font-normal">{person.role}</span></span>}<br />
                     {person.aadhar && <>Aadhar Card No: <span className="font-bold print:font-normal">{person.aadhar}</span></>}
                     {person.aadhar && person.pan && <span className="mx-2">|</span>}
                     {person.pan && <>PAN Card No: <span className="font-bold print:font-normal">{person.pan.toUpperCase()}</span></>}
@@ -203,7 +209,8 @@ const PreviewPage = memo(function PreviewPage({
           {isLastPage && (
             <>
               <p style={{ marginTop: "16px", lineHeight: "1.5" }}>
-                That I/we have executed the annexed <span className="font-bold print:font-normal">{docName || "Gift Deed"}</span> dated <span className="font-bold print:font-normal">{docDate || "26th April 2026"}</span>, pertaining to the {docPurpose || "___"} purposes.<br />
+                That I/we have executed the annexed <span className="font-bold print:font-normal">{docName || "Gift Deed"}</span> dated <span className="font-bold print:font-normal">{docDate || "26th April 2026"}</span>, pertaining to the {docPurpose || "___"} purposes.
+                {agreementAmount && <span> Agreement Value: ₹<span className="font-bold print:font-normal">{agreementAmount}</span>.</span>}<br />
                 I/we state that I/we have signed and given left hand digital thumb in the said document beside our respective photographs appearing here in above, and that the said <span className="font-bold print:font-normal">{docName || "Gift Deed"}</span> consists of {totalDocumentPages} pages.
               </p>
               <hr style={{ margin: "8px 0", borderTop: "1px solid black", borderBottom: "none", borderLeft: "none", borderRight: "none" }} />
@@ -287,14 +294,17 @@ function WebcamCapture({ onCapture, onClose }: { onCapture: (img: string) => voi
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(videoRef.current, 0, 0, width, height); // Draw with new dimensions
-        onCapture(canvas.toDataURL('image/jpeg', 0.3)); // Aggressively reduced quality for smaller PDF
+        const capturedDataUrl = canvas.toDataURL('image/jpeg', 0.3);
+        console.log("WebcamCapture: Captured photo data URL length:", capturedDataUrl.length);
+        if (capturedDataUrl.length < 100) console.warn("WebcamCapture: Captured photo data URL seems too short, might be empty or invalid.");
+        onCapture(capturedDataUrl); // Aggressively reduced quality for smaller PDF
         onClose();
       }
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center overflow-y-auto p-3 sm:p-4 backdrop-blur-sm no-print">
+    <div className="fixed inset-0 bg-black/80 z-[10000] flex items-center justify-center overflow-y-auto p-3 sm:p-4 backdrop-blur-sm no-print">
       <div className="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-2xl w-full max-w-[26rem] max-h-[calc(100dvh-1.5rem)] border border-outline-variant flex flex-col">
         <div className="shrink-0 p-3 sm:p-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
           <h3 className="font-label font-bold text-sm uppercase tracking-widest text-on-surface">Capture Photo</h3>
@@ -324,15 +334,18 @@ export function GiftDeedEditor() {
   const [docName, setDocName] = useState("Gift Deed");
   const [docNameSelection, setDocNameSelection] = useState<string>("Gift Deed");
   const [docPurpose, setDocPurpose] = useState("Flat Purpose");
+  const [agreementAmount, setAgreementAmount] = useState<string>("");
   const [manualTotalDocumentPages, setManualTotalDocumentPages] = useState<string>("");
   const [docDate, setDocDate] = useState(new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }));
   const [clientName, setClientName] = useState("");
   const [persons, setPersons] = useState<Person[]>([
-    { id: `person-${Date.now()}`, name: '', age: '', addr: '', aadhar: '', pan: '', phone: '', email: '', photo: undefined, thumb: undefined }
+    { id: `person-${Date.now()}`, name: '', age: '', addr: '', aadhar: '', pan: '', phone: '', email: '', photo: undefined, thumb: undefined, role: '' }
   ]);
   const [basePdfFile, setBasePdfFile] = useState<File | null>(null);
   const [basePdfPageCount, setBasePdfPageCount] = useState(0);
   const [showPreviewMobile, setShowPreviewMobile] = useState(false);
+  const [showPersonEditorModal, setShowPersonEditorModal] = useState(false); // State for person editor modal
+  const [currentPersonIndexInModal, setCurrentPersonIndexInModal] = useState(0); // Index of person being edited in modal
 
   useEffect(() => {
     if (basePdfFile) {
@@ -356,25 +369,40 @@ export function GiftDeedEditor() {
   const [activeCapture, setActiveCapture] = useState<{ personId: string, type: 'photo' | 'thumb' } | null>(null);
 
   // --- State Update Handlers ---
-  const addPerson = () => {
-    setPersons(prev => [...prev, { id: `person-${Date.now()}`, name: '', age: '', addr: '', aadhar: '', pan: '', phone: '', email: '', photo: undefined, thumb: undefined }]);
-  };
+  const addPerson = useCallback(() => {
+    setPersons(prevPersons => {
+      const newPerson: Person = { id: `person-${Date.now()}`, name: '', age: '', addr: '', aadhar: '', pan: '', phone: '', email: '', photo: undefined, thumb: undefined, role: '' };
+      setCurrentPersonIndexInModal(prevPersons.length); // Atomically set the index to the new person
+      return [...prevPersons, newPerson];
+    });
+  }, [setPersons]);
 
-  const deletePerson = (id: string) => {
-    setPersons(prev => prev.filter(p => p.id !== id));
-  };
+  const deletePerson = useCallback((id: string) => {
+    setPersons(prev => {
+      const updatedPersons = prev.filter(p => p.id !== id);
+      // Adjust currentPersonIndexInModal if the deleted person was before the current index
+      if (currentPersonIndexInModal >= updatedPersons.length && updatedPersons.length > 0) {
+        setCurrentPersonIndexInModal(updatedPersons.length - 1);
+      } else if (updatedPersons.length === 0) {
+        setCurrentPersonIndexInModal(0); // Or close modal if no persons left
+      }
+      return updatedPersons;
+    });
+  }, [currentPersonIndexInModal]);
 
-  const updatePerson = (id: string, field: keyof Person, value: any) => {
-    setPersons(prevPersons => prevPersons.map(p =>
-      p.id === id ? { ...p, [field]: value } : p
-    ));
-  };
+  const updatePerson = useCallback((id: string, field: keyof Person, value: any) => {
+    // The previous console.log was placed incorrectly inside the .map(), causing a syntax error.
+    // It's also more efficient to log once per update, so it has been moved outside the map.
+    console.log(`GiftDeedEditor: Updating person ${id}, field '${String(field)}' with value (length: ${String(value).length > 100 ? String(value).length : value})`);
+    setPersons(prevPersons => prevPersons.map(p => (p.id === id ? { ...p, [field]: value } : p)));
+  }, [setPersons]); // setPersons is stable from useState
 
-  const handleCapture = (img: string) => {
+  const handleCapture = useCallback((img: string) => {
     if (!activeCapture) return;
     updatePerson(activeCapture.personId, activeCapture.type, img);
+    console.log(`GiftDeedEditor: handleCapture completed for ${activeCapture.type}.`);
     setActiveCapture(null);
-  };
+  }, [activeCapture, updatePerson]);
 
   const startFingerprintScan = async (personId: string) => {
     try {
@@ -422,12 +450,12 @@ export function GiftDeedEditor() {
       throw new Error('Optical Capture Failed or User pulled finger away.');
     } catch (e) {
       // Fallback: If no scanner is detected or the user took too long, fallback cleanly to WebCam
-      console.log('Mantra scanner fallback triggered:', e);
+      console.warn('Mantra scanner fallback triggered:', e);
       setActiveCapture({ personId, type: 'thumb' });
     }
   };
 
-  const handleFileUpload = (personId: string, type: 'photo' | 'thumb', e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback((personId: string, type: 'photo' | 'thumb', e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -456,7 +484,7 @@ export function GiftDeedEditor() {
 
           canvas.width = width;
           canvas.height = height;
-          ctx?.drawImage(img, 0, 0, width, height);
+          ctx?.drawImage(img, 0, 0, width, height); // Draw the loaded image with new dimensions
 
           // Get the compressed data URL
           const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.3); // Aggressively reduced quality for smaller PDF
@@ -467,7 +495,7 @@ export function GiftDeedEditor() {
       reader.readAsDataURL(file);
     }
     if (e.target) e.target.value = '';
-  };
+  }, []); // `updatePerson` is a stable useCallback, so it doesn't need to be a dependency here.
 
   const [fetchQuery, setFetchQuery] = useState("");
   const [isFetching, setIsFetching] = useState(false);
@@ -692,7 +720,7 @@ export function GiftDeedEditor() {
     setFocusedPersonId(null);
   };
 
-  const focusedPerson = useMemo(
+  const focusedPerson = useMemo( // This is for the inline autofill, not the modal
     () => persons.find((person) => person.id === focusedPersonId) ?? null,
     [focusedPersonId, persons],
   );
@@ -834,6 +862,7 @@ export function GiftDeedEditor() {
         docDate: docDate || "",
         clientName: clientName || "",
         persons: personsToSave,
+        agreementAmount: agreementAmount || "",
         pdfUrl: overridePdfUrl || pdfUrl || null,
         updatedAt: new Date(),
         manualTotalDocumentPages: manualTotalDocumentPages || null,
@@ -883,6 +912,70 @@ export function GiftDeedEditor() {
     }
   };
 
+  const handleSkipNotary = async () => {
+    if (!window.confirm(`Are you sure you want to mark Serial No ${srNo} as an Offline Notary? This will skip to the next number.`)) return;
+    
+    setIsSaving(true);
+    try {
+      const docData = {
+        srNo: srNo || "",
+        kNo: kNo || "",
+        pageNo: pageNo || "",
+        docDate: docDate || new Date().toISOString().split("T")[0],
+        clientName: "Offline Notary",
+        docName: "Offline Notary",
+        persons: [],
+        agreementAmount: "",
+        pdfUrl: "offline",
+        updatedAt: new Date(),
+        createdAt: new Date(),
+        isOffline: true,
+      };
+
+      await addDoc(collection(db, "documents"), docData);
+      
+      const nextSrNo = (!isNaN(parseInt(srNo)) ? (parseInt(srNo) + 1).toString() : srNo);
+      const nextPageNo = (!isNaN(parseInt(pageNo)) ? (parseInt(pageNo) + 1).toString() : pageNo);
+
+      await setDoc(doc(db, "settings", "config"), {
+        currentSrNo: nextSrNo,
+        registerNumber: kNo, // kNo remains unchanged
+        currentPageNo: nextPageNo
+      }, { merge: true });
+
+      alert(`Offline Notary recorded for Serial No ${srNo}!\nNext Serial No will be ${nextSrNo}.`);
+      
+      // Reset form variables to prep for the next entry
+      setFetchQuery("");
+      setSrNo(nextSrNo);
+      setPageNo(nextPageNo);
+      setClientName("");
+      setDocDate(new Date().toISOString().split("T")[0]); // Reset to today
+      setDocName("");
+      setAgreementAmount("");
+      setPersons([{
+        id: Date.now().toString(),
+        name: "",
+        age: "",
+        addr: "",
+        aadhar: "",
+        pan: "",
+        phone: "",
+        email: "",
+        role: "",
+      }]);
+      setPdfUrl("");
+      setBasePdfFile(null);
+      setManualTotalDocumentPages("");
+      // The next sequence numbers will be automatically fetched by the useEffect on next render
+    } catch (error) {
+      console.error("Error creating offline notary:", error);
+      alert("Failed to create offline notary record.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const generateMergedPdfBlob = async (): Promise<Blob> => {
     let basePdfPageCount = 0;
     let basePdfBytes: ArrayBuffer | null = null;
@@ -911,6 +1004,7 @@ export function GiftDeedEditor() {
         docDate={docDate}
         docName={docName}
         docPurpose={docPurpose}
+        agreementAmount={agreementAmount}
         finalDocumentPageCount={finalDocumentPageCount} // Pass the new prop
       />
     ).toBlob();
@@ -1142,6 +1236,27 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
         </div>
       )}
 
+      {/* Person Editor Modal */}
+      {showPersonEditorModal && persons.length > 0 && (
+        <PersonEditorModal
+          isOpen={showPersonEditorModal}
+          key={persons[currentPersonIndexInModal].id + persons[currentPersonIndexInModal].photo + persons[currentPersonIndexInModal].thumb} // Force re-mount on biometric change to ensure UI updates
+          onClose={() => setShowPersonEditorModal(false)}
+          person={persons[currentPersonIndexInModal]}
+          onUpdatePerson={updatePerson}
+          onDeletePerson={deletePerson}
+          onAddPerson={addPerson}
+          currentIndex={currentPersonIndexInModal}
+          totalPersons={persons.length}
+          onNavigate={(direction) => {
+            if (direction === 'prev' && currentPersonIndexInModal > 0) setCurrentPersonIndexInModal(prev => prev - 1);
+            if (direction === 'next' && currentPersonIndexInModal < persons.length - 1) setCurrentPersonIndexInModal(prev => prev + 1);
+          }}
+          onStartCapture={setActiveCapture}
+          knownClients={knownClients}
+          onAutofillPerson={autofillPerson}
+        />
+      )}
 
 
       <main className="flex-1 overflow-y-auto w-full p-0 bg-surface print:bg-white print:p-0">
@@ -1275,6 +1390,10 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
                 <input type="number" value={manualTotalDocumentPages} onChange={(e) => setManualTotalDocumentPages(e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. 5" />
                 <p className="text-xs text-on-surface-variant mt-1">Leave blank to auto-calculate ({previewBasePdfPageCount} + {notaryGeneratedPageCount} = {finalDocumentPageCount} pages)</p>
               </div>
+              <div>
+                <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Agreement Value (₹)</label>
+                <input type="number" value={agreementAmount} onChange={(e) => setAgreementAmount(e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface focus:ring-2 focus:ring-primary/20 focus:border-primary/50 outline-none transition-all font-medium text-sm" placeholder="e.g. 50000" />
+              </div>
             </div>
 
             <div className="pt-5 border-t border-outline-variant/15">
@@ -1289,7 +1408,15 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
                 <div key={person.id} className="p-4 border border-outline-variant/30 rounded-xl bg-surface-container-lowest/50 relative shadow-sm">
                   <div className="absolute -left-2 -top-2 w-6 h-6 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-xs shadow-md">{index + 1}</div>
                   {persons.length > 1 && (
-                    <button onClick={() => deletePerson(person.id)} className="absolute -right-2 -top-2 w-6 h-6 rounded-full bg-error text-on-error flex items-center justify-center hover:bg-error/80 shadow-md transition-colors" title="Remove person">
+                    <button
+                      onClick={() => {
+                        if (window.confirm("Are you sure you want to remove this person?")) {
+                          deletePerson(person.id);
+                        }
+                      }}
+                      className="absolute -right-2 -top-2 w-6 h-6 rounded-full bg-error text-on-error flex items-center justify-center hover:bg-error/80 shadow-md transition-colors"
+                      title="Remove person"
+                    >
                       <X size={14} />
                     </button>
                   )}
@@ -1339,6 +1466,10 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
                     <div className="2xl:col-span-2">
                       <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Age</label>
                       <input type="text" value={person.age} onChange={(e) => updatePerson(person.id, 'age', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="Age" />
+                    </div>
+                    <div className="2xl:col-span-6">
+                      <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Role (Donor, Donee, Licensor, etc)</label>
+                      <input type="text" value={person.role || ''} onChange={(e) => updatePerson(person.id, 'role', e.target.value)} className="w-full p-2.5 border border-outline-variant/40 rounded-lg bg-surface outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all font-medium text-sm" placeholder="e.g. Donor" />
                     </div>
                     <div className="2xl:col-span-3">
                       <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Aadhar Card *</label>
@@ -1428,7 +1559,17 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
               ))}
             </div>
 
-            <button onClick={addPerson} className="mt-3 flex w-full items-center justify-center gap-2 bg-secondary-container text-on-secondary-container px-4 py-2.5 rounded-xl font-body font-medium hover:opacity-90 active:scale-95 transition-all text-sm shadow-sm">
+            {/* Button to open the Person Editor Modal */}
+            <button
+              onClick={() => {
+                setCurrentPersonIndexInModal(0); // Start with the first person
+                setShowPersonEditorModal(true);
+              }}
+              className="mt-3 flex w-full items-center justify-center gap-2 bg-secondary-container text-on-secondary-container px-4 py-2.5 rounded-xl font-body font-medium hover:opacity-90 active:scale-95 transition-all text-sm shadow-sm"
+            >
+              <Edit3 size={16} /> Edit Persons in Full Screen
+            </button>
+            <button onClick={() => { addPerson(); setCurrentPersonIndexInModal(persons.length); setShowPersonEditorModal(true); }} className="mt-3 flex w-full items-center justify-center gap-2 bg-secondary-container text-on-secondary-container px-4 py-2.5 rounded-xl font-body font-medium hover:opacity-90 active:scale-95 transition-all text-sm shadow-sm">
               <Plus size={16} /> Add Person
             </button>
 
@@ -1458,6 +1599,19 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
                 >
                   <Printer size={16} />
                   Print Document
+                </button>
+
+                <button
+                  onClick={handleSkipNotary}
+                  disabled={isSaving}
+                  className={`w-full sm:w-auto justify-center flex items-center gap-2 rounded-xl border px-4 py-2.5 font-body text-xs font-bold uppercase tracking-[0.16em] shadow-sm transition-all whitespace-nowrap ${
+                    isSaving
+                      ? 'border-outline-variant/20 bg-surface-variant text-on-surface-variant opacity-70 cursor-not-allowed'
+                      : 'border-outline-variant/30 bg-surface text-on-surface hover:bg-surface-container active:scale-[0.98]'
+                  }`}
+                >
+                  {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  {isSaving ? "Skipping..." : "Skip (Offline Notary)"}
                 </button>
 
                 {pdfUrl && (
@@ -1502,6 +1656,7 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
                 pageNo={previewPageNo}
                 docName={previewDocName}
                 docPurpose={previewDocPurpose}
+                agreementAmount={agreementAmount}
               />
             ))}
           </div>
