@@ -294,11 +294,13 @@ export function Clients() {
                   className="w-full text-left p-3 rounded-lg bg-surface-container-high hover:bg-surface-container-highest transition-colors flex items-center gap-3"
                 >
                   <FileText size={18} className="text-primary" />
-                  <span className="font-body text-sm text-on-surface flex-1">
-                    {docItem.srNo ? `Sr No: ${docItem.srNo}` : `Document ID: ${docItem.id}`} 
-                    {(docItem.kNo || docItem.pageNo) && (
-                      <span className="text-on-surface-variant ml-2"> (Reg: {docItem.kNo || '-'} / Pg: {docItem.pageNo || '-'})</span>
-                    )}
+                  <span className="flex flex-col font-body text-sm text-on-surface flex-1">
+                    <span className="truncate">
+                      Sr No: <span className="font-medium">{docItem.srNo || docItem.id}</span>
+                    </span>
+                    <span className="text-on-surface-variant text-xs mt-0.5 truncate">
+                      Reg No: <span className="font-medium">{docItem.kNo || '-'}</span> | Page No: <span className="font-medium">{docItem.pageNo || '-'}</span>
+                    </span>
                   </span>
                 </button>
               ))}

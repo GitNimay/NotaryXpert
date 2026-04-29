@@ -5,6 +5,7 @@ import {
   Loader2,
   LogOut,
   Plus,
+  HelpCircle, // Added HelpCircle for the support button
   Settings,
   Users,
   X,
@@ -18,17 +19,18 @@ import { BrandLockup, BrandMark } from "../BrandLockup";
 interface SidebarProps {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-  isDesktop: boolean;
+  isDesktop: boolean; // Keep isDesktop prop
+  onOpenSupportModal: () => void; // New prop to open the support modal
 }
 
-const links = [
+const links = [ // Keep links array
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/documents", icon: FileText, label: "Documents" },
   { to: "/clients", icon: Users, label: "Clients" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
-export function Sidebar({ isOpen, setIsOpen, isDesktop }: SidebarProps) {
+export function Sidebar({ isOpen, setIsOpen, isDesktop, onOpenSupportModal }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -175,6 +177,29 @@ export function Sidebar({ isOpen, setIsOpen, isDesktop }: SidebarProps) {
               Session
             </p>
           )}
+
+          {/* Support Button */}
+          <button
+            type="button"
+            onClick={onOpenSupportModal}
+            title={!isExpanded ? "Contact Developer: +91 95455 56045" : ""} // Tooltip for collapsed state
+            className={cn(
+              "group flex w-full items-center rounded-xl text-tertiary transition-all duration-200 hover:bg-tertiary/8", // Using tertiary color for support
+              isExpanded ? "gap-2.5 px-2 py-2" : "mx-auto h-10 w-10 justify-center"
+            )}
+          >
+            <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg", isExpanded && "bg-tertiary/8")}> {/* Icon */}
+              <HelpCircle size={17} />
+            </span>
+            {isExpanded && (
+              <span className="min-w-0 truncate text-left font-body text-sm font-medium">
+                Support
+              </span>
+            )}
+          </button>
+
+          {/* Spacer for visual separation if needed, or just rely on button margins */}
+          {isExpanded && <div className="h-2"></div>}
 
           <button
             type="button"

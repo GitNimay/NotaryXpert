@@ -16,6 +16,9 @@ export function Documents() {
   const [statusFilter, setStatusFilter] = useState("");
   const [dateSort, setDateSort] = useState("newest");
   const [startDate, setStartDate] = useState("");
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [docsPerPage, setDocsPerPage] = useState(10); // Default to 10 documents per page
   const [endDate, setEndDate] = useState("");
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
@@ -68,11 +71,9 @@ export function Documents() {
     [documents],
   );
 
-  const filteredDocuments = useMemo(() => {
+  const filteredAndSortedDocuments = useMemo(() => {
     const safeSearch = String(deferredSearchQuery).trim().toLowerCase();
-
-    return documents
-      .filter((doc) => {
+    const filtered = documents.filter((doc) => {
         const matchesSearch =
           safeSearch === "" ||
           String(doc.id || "").toLowerCase().includes(safeSearch) ||
@@ -103,13 +104,72 @@ export function Documents() {
         }
 
         return matchesSearch && matchesRegNumberFilter && matchesStatus && matchesDate;
-      })
-      .sort((a, b) => {
+      });
+
+    return filtered.sort((a, b) => {
         if (dateSort === "newest") return b.timestamp - a.timestamp;
         if (dateSort === "oldest") return a.timestamp - b.timestamp;
         return 0;
       });
   }, [dateSort, deferredSearchQuery, documents, endDate, regNumberFilter, startDate, statusFilter]);
+
+  const totalFilteredDocuments = useMemo(() => filteredAndSortedDocuments.length, [filteredAndSortedDocuments]);
+  const totalPages = Math.ceil(totalFilteredDocuments / docsPerPage);
+
+  const paginatedDocuments = useMemo(() => {
+    const startIndex = (currentPage - 1) * docsPerPage;
+    const endIndex = startIndex + docsPerPage;
+    return filteredAndSortedDocuments.slice(startIndex, endIndex);
+  }, [currentPage, docsPerPage, filteredAndSortedDocuments]);
+
+  const handlePageChange = (pageNumber: number) => {
+    if (pageNumber > 0 && pageNumber <= totalPages) {
+      setCurrentPage(pageNumber);
+    }
+  };
+
+  const renderPageNumbers = () => {
+    const pageNumbers = [];
+    const maxPageButtons = 5; // Max number of page buttons to show
+    let startPage = Math.max(1, currentPage - Math.floor(maxPageButtons / 2));
+    let endPage = Math.min(totalPages, startPage + maxPageButtons - 1);
+
+    // Adjust startPage if not enough pages to fill maxPageButtons
+    if (endPage - startPage + 1 < maxPageButtons) {
+      startPage = Math.max(1, endPage - maxPageButtons + 1);
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+      pageNumbers.push(
+        <button
+          key={i}
+          onClick={() => handlePageChange(i)}
+          className={`w-8 h-8 rounded-md font-medium text-sm flex items-center justify-center transition-colors ${
+            currentPage === i
+              ? "bg-primary-container text-on-primary-container"
+              : "text-on-surface hover:bg-surface-container-high"
+          }`}
+        >
+          {i}
+        </button>
+      );
+    }
+
+    // Add ellipsis if needed
+    if (startPage > 1) {
+      pageNumbers.unshift(<span key="ellipsis-start" className="px-2 text-on-surface-variant">...</span>);
+    }
+    if (endPage < totalPages) {
+      pageNumbers.push(<span key="ellipsis-end" className="px-2 text-on-surface-variant">...</span>);
+    }
+
+    return pageNumbers;
+  };
+
+  // Reset current page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [deferredSearchQuery, regNumberFilter, statusFilter, startDate, endDate, dateSort]);
 
   return (
     <Layout>
@@ -192,13 +252,14 @@ export function Documents() {
                  <div className="absolute inset-0 flex items-center justify-center text-on-surface-variant gap-2">
                    <Loader2 className="animate-spin" size={24} /> Loading Archive...
                  </div>
-              ) : filteredDocuments.length === 0 ? (
-                 <div className="py-12 flex flex-col items-center justify-center text-on-surface-variant">
+              ) : totalFilteredDocuments === 0 ? ( // Corrected condition: if no documents match filters
+                 <div className="absolute inset-0 flex flex-col items-center justify-center text-on-surface-variant gap-2">
                    <p className="font-headline font-bold text-lg mb-1">No matches found!</p>
                    <p className="font-body text-sm">Try adjusting your active filters.</p>
                  </div>
+
               ) : (
-                filteredDocuments.map((doc, i) => (
+                paginatedDocuments.map((doc, i) => (
                   <div key={doc.id} className={`content-auto grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-4 px-6 py-5 hover:bg-surface-bright transition-colors group items-center border-t border-outline-variant/15 md:border-none relative ${i % 2 !== 0 ? 'bg-surface-container-low/30' : ''}`}>
                     <div className="hidden md:block absolute bottom-0 left-6 right-6 h-[1px] bg-surface-container-low group-last:hidden"></div>
                     
@@ -282,15 +343,41 @@ Contact Details : Mob. 8286000888 / 9933806888 | Email - advsameervispute@gmail.
 
             {/* Pagination / Record Count */}
             <div className="px-6 py-4 border-t border-outline-variant/15 flex flex-col sm:flex-row gap-4 items-center justify-between bg-surface-container-lowest">
-              <span className="text-sm text-on-surface-variant font-body">Showing {filteredDocuments.length} matching entries out of {documents.length}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-on-surface-variant font-body">
+                  Showing {((currentPage - 1) * docsPerPage) + 1} - {Math.min(currentPage * docsPerPage, totalFilteredDocuments)} of {totalFilteredDocuments} entries
+                </span>
+                <div className="relative">
+                  <select
+                    value={docsPerPage}
+                    onChange={(e) => {
+                      setDocsPerPage(Number(e.target.value));
+                      setCurrentPage(1); // Reset to first page when changing docs per page
+                    }}
+                    className="appearance-none bg-surface-container-highest focus:bg-surface-container-lowest text-on-surface rounded-md py-1.5 pl-3 pr-8 border-none focus:ring-1 focus:ring-primary/30 transition-all font-body text-xs cursor-pointer"
+                  >
+                    <option value={5}>5 per page</option>
+                    <option value={10}>10 per page</option>
+                    <option value={20}>20 per page</option>
+                    <option value={50}>50 per page</option>
+                  </select>
+                  <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
+                </div>
+              </div>
               <div className="flex gap-1">
-                <button className="p-2 rounded-md text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-50" disabled>
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  className="p-2 rounded-md text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-50"
+                  disabled={currentPage === 1}
+                >
                   <ChevronLeft size={16} />
                 </button>
-                <button className="w-8 h-8 rounded-md bg-primary-container text-on-primary-container font-medium text-sm flex items-center justify-center">1</button>
-                <button className="w-8 h-8 rounded-md text-on-surface hover:bg-surface-container-high font-medium text-sm flex items-center justify-center transition-colors">2</button>
-                <button className="w-8 h-8 rounded-md text-on-surface hover:bg-surface-container-high font-medium text-sm flex items-center justify-center transition-colors">3</button>
-                <button className="p-2 rounded-md text-on-surface hover:bg-surface-container-high transition-colors">
+                {renderPageNumbers()}
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  className="p-2 rounded-md text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50"
+                  disabled={currentPage === totalPages || totalPages === 0}
+                >
                   <ChevronRight size={16} />
                 </button>
               </div>
